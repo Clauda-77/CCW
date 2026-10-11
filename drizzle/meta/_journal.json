@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1786789218976,
+      "tag": "0000_kind_harrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1786789783421,
+      "tag": "0001_needy_tempest",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786793881884,
+      "tag": "0002_material_power_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787052601947,
+      "tag": "0003_tan_vanisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787068637829,
+      "tag": "0004_early_bloodscream",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787160918384,
+      "tag": "0005_pale_siren",
+      "breakpoints": true
+    }
+  ]
+}

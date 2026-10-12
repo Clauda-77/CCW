@@ -47,6 +47,11 @@ type NavItem = {
   children?: NavChild[];
 };
 
+type DashboardIdentity = {
+  name?: string | null;
+  warehouseName?: string | null;
+};
+
 const menuItems: NavItem[] = [
   {
     icon: FileText,
@@ -188,7 +193,7 @@ export default function DashboardLayout({
       </div>
     );
 
-  const identity = user ?? (preview ? { name: "عرض الواجهة" } : null);
+  const identity = (user ?? (preview ? { name: "عرض الواجهة" } : null)) as DashboardIdentity | null;
   const role = user?.role ?? "user";
   const visible = menuItems
     .map(item =>
@@ -234,7 +239,7 @@ export default function DashboardLayout({
     </div>
   );
 
-  const warehouseLabel = user?.warehouseName ?? "";
+  const warehouseLabel = identity?.warehouseName ?? "";
   return (
     <div className="min-h-screen" dir="rtl">
       <header className="legacy-topbar sticky top-0 z-40">

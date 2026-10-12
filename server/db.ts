@@ -278,7 +278,7 @@ export async function getWarehouseStatistics(
             ...dateConditions
           )
         )
-        .limit(100_000),
+        .limit(50_000),
       db
         .select({
           memoId: memos.id,
@@ -472,7 +472,7 @@ export async function getDeliveredQuantityStatistics(
     .from(memoItems)
     .innerJoin(memos, eq(memoItems.memoId, memos.id))
     .where(and(...conditions))
-    .limit(100_000);
+    .limit(50_000);
   return {
     quantity: rows.reduce((total, row) => total + Number(row.quantity ?? 0), 0),
     memoCount: new Set(rows.map(row => row.memoId)).size,
@@ -1292,7 +1292,7 @@ export async function listJournalLines(input: {
     .leftJoin(parties, eq(memos.partyId, parties.id))
     .where(and(...conditions))
     .orderBy(memos.memoDate, memos.id, memoItems.id)
-    .limit(input.limit ?? 20_000);
+    .limit(input.limit ?? 10_000);
 }
 
 export async function createMemo(input: {
@@ -1707,7 +1707,7 @@ export async function listInventoryBalances(options?: {
 }) {
   const db = await getDb();
   if (!db) return [];
-  const limit = options?.limit ?? 20_000;
+  const limit = options?.limit ?? 10_000;
   const term = options?.search?.trim();
   const materialSearch = term
     ? or(

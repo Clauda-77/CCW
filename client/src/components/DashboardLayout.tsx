@@ -49,7 +49,16 @@ type NavItem = {
 
 type DashboardIdentity = {
   name?: string | null;
+  role?: string | null;
   warehouseName?: string | null;
+};
+
+const roleLabels: Record<string, string> = {
+  admin: "مدير",
+  reviewer: "مراجع",
+  data_entry: "مدخل بيانات",
+  warehouse_keeper: "أمين مستودع",
+  user: "مستخدم",
 };
 
 const menuItems: NavItem[] = [
@@ -193,7 +202,8 @@ export default function DashboardLayout({
       </div>
     );
 
-  const identity = (user ?? (preview ? { name: "عرض الواجهة" } : null)) as DashboardIdentity | null;
+  const identity = (user ??
+    (preview ? { name: "عرض الواجهة" } : null)) as DashboardIdentity | null;
   const role = user?.role ?? "user";
   const visible = menuItems
     .map(item =>
@@ -240,6 +250,7 @@ export default function DashboardLayout({
   );
 
   const warehouseLabel = identity?.warehouseName ?? "";
+  const roleLabel = roleLabels[identity?.role ?? ""] ?? "مستخدم";
   return (
     <div className="min-h-screen" dir="rtl">
       <header className="legacy-topbar sticky top-0 z-40">
@@ -318,9 +329,25 @@ export default function DashboardLayout({
                   <span className="hidden max-w-24 truncate text-xs font-bold text-[#24536f] md:block">
                     {identity?.name || "-"}
                   </span>
+                  <span className="hidden rounded-full bg-[#e8f6ff] px-2 py-1 text-[10px] font-bold text-[#17698a] sm:inline-block">
+                    {roleLabel}
+                  </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {user ? (
+                  <div className="min-w-48 border-b border-slate-100 px-3 py-2 text-right">
+                    <p className="text-sm font-bold text-slate-800">
+                      {identity?.name || "مستخدم"}
+                    </p>
+                    <p className="mt-1 text-xs text-[#17698a]">
+                      الدور: {roleLabel}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      المستودع: {warehouseLabel || "غير محدد"}
+                    </p>
+                  </div>
+                ) : null}
                 {user ? (
                   <DropdownMenuItem
                     onClick={logout}

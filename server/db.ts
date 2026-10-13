@@ -1,4 +1,3 @@
-
 import { randomUUID } from "node:crypto";
 import {
   and,
@@ -26,6 +25,7 @@ import {
   parties,
   stockMovements,
   users,
+  userWarehouses,
   warehouses,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -116,6 +116,12 @@ export async function listUsers() {
       email: users.email,
       loginMethod: users.loginMethod,
       role: users.role,
+      warehouseId: sql<number | null>`(select \`uw\`.\`warehouseId\` from \`userwarehouses\` as \`uw\` where \`uw\`.\`userId\` = \`users\`.\`id\` order by \`uw\`.\`id\` desc limit 1)`.as(
+        "warehouseId"
+      ),
+      warehouseName: sql<string | null>`(select \`w\`.\`name\` from \`userwarehouses\` as \`uw\` inner join \`warehouses\` as \`w\` on \`w\`.\`id\` = \`uw\`.\`warehouseId\` where \`uw\`.\`userId\` = \`users\`.\`id\` order by \`uw\`.\`id\` desc limit 1)`.as(
+        "warehouseName"
+      ),
       createdAt: users.createdAt,
       lastSignedIn: users.lastSignedIn,
     })
@@ -123,14 +129,34 @@ export async function listUsers() {
     .orderBy(desc(users.lastSignedIn), desc(users.id));
 }
 
+export async function listUserWarehouses(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: warehouses.id,
+      code: warehouses.code,
+      name: warehouses.name,
+      isActive: warehouses.isActive,
+    })
+    .from(userWarehouses)
+    .innerJoin(warehouses, eq(userWarehouses.warehouseId, warehouses.id))
+    .where(eq(userWarehouses.userId, userId))
+    .orderBy(warehouses.name);
+}
+
 export async function createLocalUser(input: {
   name: string;
   email?: string;
   role: import("../drizzle/schema").WarehouseRole;
+  warehouseId: number;
   actorId: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const warehouse = await getWarehouseById(input.warehouseId);
+  if (!warehouse || !warehouse.isActive)
+    throw new Error("المستودع المحدد غير موجود أو غير نشط.");
   const normalizedEmail = input.email?.trim() || null;
   if (normalizedEmail) {
     const [existing] = await db
@@ -149,13 +175,19 @@ export async function createLocalUser(input: {
       role: input.role,
     });
     const id = Number(result[0].insertId);
+    await tx.insert(userWarehouses).values({
+      userId: id,
+      warehouseId: warehouse.id,
+      assignedBy: input.actorId,
+      assignedAt: new Date(),
+    });
     await writeAdminAudit(tx, {
       actorId: input.actorId,
       action: "user_created",
       entityType: "user",
       entityId: id,
       entityLabel: input.name.trim(),
-      details: `إضافة مستخدم محلي جديد بالدور ${input.role}.`,
+      details: `إضافة مستخدم محلي جديد بالدور ${input.role} والمستودع ${warehouse.name} (#${warehouse.id}).`,
     });
     return { success: true as const, id };
   });

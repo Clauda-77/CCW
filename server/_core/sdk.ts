@@ -204,6 +204,9 @@ class SDKServer {
       openId: payload.openId,
       appId: payload.appId,
       name: payload.name,
+      warehouseId: payload.warehouseId ?? null,
+      warehouseName: payload.warehouseName ?? null,
+
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)

@@ -651,6 +651,16 @@ export const appRouter = router({
             code: "BAD_REQUEST",
             message: "المستودع المحدد غير موجود أو غير نشط.",
           });
+        const assignedWarehouses = await warehouseDb.listUserWarehouses(user.id);
+        if (
+          assignedWarehouses.length > 0 &&
+          !assignedWarehouses.some(assigned => assigned.id === warehouse.id)
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "هذا المستخدم مخصص لمستودع آخر. اختر المستودع المسند إليه.",
+          });
         const sessionToken = await sdk.createSessionToken(user.openId, {
           name: user.name ?? `Local user ${user.id}`,
           warehouseId: warehouse.id,
@@ -693,6 +703,7 @@ export const appRouter = router({
           name: z.string().trim().min(2).max(160),
           email: z.string().trim().email().optional().or(z.literal("")),
           role: z.enum(userRoles),
+          warehouseId: z.number().int().positive(),
         })
       )
       .mutation(({ ctx, input }) =>

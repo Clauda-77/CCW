@@ -26,6 +26,18 @@ export const warehouses = mysqlTable("warehouses", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const userWarehouses = mysqlTable("userwarehouses", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  warehouseId: int("warehouseId").notNull(),
+  assignedBy: int("assignedBy"),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+}, table => [
+  index("userwarehouses_userId_idx").on(table.userId),
+  index("userwarehouses_warehouseId_idx").on(table.warehouseId),
+  index("userwarehouses_assignedBy_idx").on(table.assignedBy),
+]);
+
 export const parties = mysqlTable("parties", {
   id: int("id").autoincrement().primaryKey(),
   legacyNumber: varchar("legacyNumber", { length: 64 }),

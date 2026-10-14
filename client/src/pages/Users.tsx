@@ -41,6 +41,7 @@ type EditableUser = {
   name: string | null;
   email: string | null;
   role: WarehouseRole;
+  warehouseId: number | null;
 };
 
 const roleMeta: Record<
@@ -108,6 +109,7 @@ export default function UsersPage() {
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState<EditableUser | null>(null);
   const [nextRole, setNextRole] = useState<WarehouseRole>("data_entry");
+  const [nextWarehouseId, setNextWarehouseId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -122,6 +124,15 @@ export default function UsersPage() {
       toast.success("تم تحديث دور المستخدم.");
     },
     onError: error => toast.error(error.message || "تعذر تحديث دور المستخدم."),
+  });
+  const updateWarehouse = trpc.users.updateWarehouse.useMutation({
+    onSuccess: async () => {
+      await utils.users.list.invalidate();
+      await utils.users.previewList.invalidate();
+      setEditing(null);
+      toast.success("تم تحديث المستودع المسند للمستخدم.");
+    },
+    onError: error => toast.error(error.message || "تعذر تحديث مستودع المستخدم."),
   });
   const createUser = trpc.users.create.useMutation({
     onSuccess: async () => {
@@ -140,6 +151,7 @@ export default function UsersPage() {
   const openRoleEditor = (entry: EditableUser) => {
     setEditing(entry);
     setNextRole(entry.role);
+    setNextWarehouseId(entry.warehouseId ? String(entry.warehouseId) : "");
   };
   const allRows = query.data ?? [];
   const rows = useMemo(() => {
@@ -445,7 +457,7 @@ export default function UsersPage() {
         <DialogContent dir="rtl" className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-right">
-              تعديل الدور التشغيلي
+              تعديل المستخدم
             </DialogTitle>
             <DialogDescription className="text-right">
               {editing?.name || editing?.email || "المستخدم"}
@@ -473,14 +485,52 @@ export default function UsersPage() {
             <p className="rounded-lg bg-slate-50 p-3 text-xs leading-6 text-slate-600">
               {roleMeta[nextRole].hint}
             </p>
+            <div className="grid gap-2">
+              <Label htmlFor="user-warehouse">المستودع المسند</Label>
+              <Select
+                value={nextWarehouseId}
+                onValueChange={setNextWarehouseId}
+              >
+                <SelectTrigger id="user-warehouse">
+                  <SelectValue
+                    placeholder={
+                      warehouseQuery.isLoading
+                        ? "جار تحميل المستودعات…"
+                        : "اختر مستودع المستخدم"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                  {activeWarehouses.map(warehouse => (
+                    <SelectItem key={warehouse.id} value={String(warehouse.id)}>
+                      {warehouse.name} — {warehouse.code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button
-              onClick={() =>
-                editing && updateRole.mutate({ id: editing.id, role: nextRole })
+              onClick={() => {
+                if (!editing || !nextWarehouseId) {
+                  toast.error("اختر المستودع المسند للمستخدم.");
+                  return;
+                }
+                updateRole.mutate({ id: editing.id, role: nextRole });
+                updateWarehouse.mutate({
+                  id: editing.id,
+                  warehouseId: Number(nextWarehouseId),
+                });
+              }}
+              disabled={
+                updateRole.isPending ||
+                updateWarehouse.isPending ||
+                warehouseQuery.isLoading
               }
-              disabled={updateRole.isPending}
               className="rounded-xl bg-[#17698a] hover:bg-[#125875]"
             >
-              {updateRole.isPending ? "جار الحفظ…" : "حفظ الدور"}
+              {updateRole.isPending || updateWarehouse.isPending
+                ? "جار الحفظ…"
+                : "حفظ التعديلات"}
             </Button>
           </div>
         </DialogContent>

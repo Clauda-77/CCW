@@ -40,16 +40,30 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
+      const existingUser = await db.getUserByOpenId(userInfo.openId);
+      const displayName =
+        userInfo.name?.trim() ||
+        existingUser?.name?.trim() ||
+        userInfo.email?.trim() ||
+        "";
+
+      if (!displayName) {
+        res.status(400).json({
+          error: "لم يرسل مزوّد تسجيل الدخول اسمًا أو بريدًا للحساب.",
+        });
+        return;
+      }
+
       await db.upsertUser({
         openId: userInfo.openId,
-        name: userInfo.name || null,
+        name: displayName,
         email: userInfo.email ?? null,
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: new Date(),
       });
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
-        name: userInfo.name || "",
+        name: displayName,
         expiresInMs: ONE_YEAR_MS,
       });
 

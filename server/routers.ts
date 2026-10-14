@@ -591,7 +591,7 @@ const withRoles = (...roles: WarehouseRole[]) =>
     return next();
   });
 
-export const warehouseKeeperProcedure = withRoles("warehouse_keeper", "admin");
+export const warehouseKeeperProcedure = withRoles("warehouse_keeper", "reviewer", "admin");
 export const dataEntryProcedure = withRoles(
   "data_entry",
   "warehouse_keeper",
@@ -600,6 +600,23 @@ export const dataEntryProcedure = withRoles(
 );
 export const reviewerProcedure = withRoles("reviewer", "admin");
 export const administratorProcedure = withRoles("admin");
+
+async function assertWarehouseAccess(user: { id: number; role: WarehouseRole }, warehouseId: number) {
+  if (user.role === "admin") return;
+  const assigned = await warehouseDb.listUserWarehouses(user.id);
+  if (!assigned.some(warehouse => warehouse.id === warehouseId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "لا تملك صلاحية الوصول إلى هذا المستودع.",
+    });
+  }
+}
+
+async function getAccessibleWarehouseIds(user: any): Promise<number[] | null> {
+  if (user.role === "admin") return null;
+  const assigned = await warehouseDb.listUserWarehouses(user.id);
+  return assigned.map(warehouse => warehouse.id);
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -653,13 +670,13 @@ export const appRouter = router({
           });
         const assignedWarehouses = await warehouseDb.listUserWarehouses(user.id);
         if (
-          assignedWarehouses.length > 0 &&
+          user.role !== "admin" &&
           !assignedWarehouses.some(assigned => assigned.id === warehouse.id)
         )
           throw new TRPCError({
             code: "FORBIDDEN",
             message:
-              "هذا المستخدم مخصص لمستودع آخر. اختر المستودع المسند إليه.",
+              "هذا المستخدم غير مسند إلى المستودع المحدد. اطلب من المدير إسناده أولاً.",
           });
         const sessionToken = await sdk.createSessionToken(user.openId, {
           name: user.name ?? `Local user ${user.id}`,
@@ -696,6 +713,16 @@ export const appRouter = router({
       )
       .mutation(({ ctx, input }) =>
         warehouseDb.updateUserRole({ ...input, actorId: ctx.user.id })
+      ),
+    updateWarehouse: administratorProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          warehouseId: z.number().int().positive(),
+        })
+      )
+      .mutation(({ ctx, input }) =>
+        warehouseDb.updateUserWarehouse({ ...input, actorId: ctx.user.id })
       ),
     create: administratorProcedure
       .input(
@@ -764,9 +791,11 @@ export const appRouter = router({
           })
           .optional()
       )
-      .query(({ input }) =>
-        warehouseDb.listWarehouses(input?.search, input?.limit)
-      ),
+      .query(async ({ ctx, input }) => {
+        const rows = await warehouseDb.listWarehouses(input?.search, input?.limit);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return allowed === null ? rows : rows.filter(row => allowed.includes(row.id));
+      }),
     previewListWarehouses: publicProcedure
       .input(
         z
@@ -932,7 +961,11 @@ export const appRouter = router({
   memos: router({
     list: protectedProcedure
       .input(z.object({ type: z.enum(["inbound", "outbound"]) }))
-      .query(({ input }) => warehouseDb.listMemos(input.type)),
+      .query(async ({ ctx, input }) => {
+        const rows = await warehouseDb.listMemos(input.type);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return allowed === null ? rows : rows.filter(row => allowed.includes(row.warehouseId));
+      }),
     previewList: publicProcedure
       .input(z.object({ type: z.enum(["inbound", "outbound"]) }))
       .query(({ input }) => {
@@ -987,12 +1020,17 @@ export const appRouter = router({
             .min(1),
         })
       )
-      .mutation(({ ctx, input }) =>
-        warehouseDb.createMemo({ ...input, createdBy: ctx.user.id })
-      ),
+      .mutation(async ({ ctx, input }) => {
+        await assertWarehouseAccess(ctx.user, input.warehouseId);
+        return warehouseDb.createMemo({ ...input, createdBy: ctx.user.id });
+      }),
     details: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .query(({ input }) => warehouseDb.getMemoDetails(input.id)),
+      .query(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return memo;
+      }),
     update: dataEntryProcedure
       .input(
         z.object({
@@ -1026,9 +1064,12 @@ export const appRouter = router({
             .min(1),
         })
       )
-      .mutation(({ ctx, input }) =>
-        warehouseDb.updateMemo({ ...input, updatedBy: ctx.user.id })
-      ),
+      .mutation(async ({ ctx, input }) => {
+        await assertWarehouseAccess(ctx.user, input.warehouseId);
+        const existing = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, existing.warehouseId);
+        return warehouseDb.updateMemo({ ...input, updatedBy: ctx.user.id });
+      }),
     previewDetails: publicProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .query(({ input }) => {
@@ -1038,24 +1079,67 @@ export const appRouter = router({
       }),
     review: reviewerProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) =>
-        warehouseDb.reviewMemo(input.id, ctx.user.id)
-      ),
-    approve: administratorProcedure
+      .mutation(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.reviewMemo(input.id, ctx.user.id);
+      }),
+    approve: reviewerProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) =>
-        warehouseDb.approveMemo(input.id, ctx.user.id)
-      ),
+      .mutation(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.approveMemo(input.id, ctx.user.id);
+      }),
     cancel: administratorProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) =>
-        warehouseDb.cancelMemo(input.id, ctx.user.id)
-      ),
+      .mutation(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.cancelMemo(input.id, ctx.user.id);
+      }),
     delete: administratorProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) =>
-        warehouseDb.deleteMemo(input.id, ctx.user.id)
-      ),
+      .mutation(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.deleteMemo(input.id, ctx.user.id);
+      }),
+  }),
+  finance: router({
+    entries: protectedProcedure.query(async ({ ctx }) => {
+      const allowed = await getAccessibleWarehouseIds(ctx.user);
+      return warehouseDb.listFinancialEntries(allowed);
+    }),
+    createEntry: reviewerProcedure
+      .input(z.object({
+        entryNumber: z.string().trim().min(1).max(128),
+        entryDate: z.date(),
+        warehouseId: z.number().int().positive(),
+        invoiceNumber: z.string().trim().max(128).optional(),
+        referenceNumber: z.string().trim().max(128).optional(),
+        amount: z.number().min(0),
+        currency: z.string().trim().max(16).optional(),
+        description: z.string().trim().max(5000).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await assertWarehouseAccess(ctx.user, input.warehouseId);
+        return warehouseDb.createFinancialEntry({ ...input, createdBy: ctx.user.id });
+      }),
+    reconciliation: protectedProcedure
+      .input(z.object({ memoId: z.number().int().positive() }))
+      .query(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.memoId);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.getMemoReconciliation(input.memoId);
+      }),
+    reconcile: reviewerProcedure
+      .input(z.object({ memoId: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetails(input.memoId);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return warehouseDb.reconcileMemo(input.memoId, ctx.user.id);
+      }),
   }),
   statistics: router({
     dashboard: warehouseKeeperProcedure
@@ -1122,7 +1206,11 @@ export const appRouter = router({
           toDate: z.date().optional(),
         })
       )
-      .query(({ input }) => warehouseDb.listJournalLines(input)),
+      .query(async ({ ctx, input }) => {
+        const rows = await warehouseDb.listJournalLines(input);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return allowed === null ? rows : rows.filter(row => allowed.includes(row.warehouseId));
+      }),
     previewJournalLines: publicProcedure
       .input(
         z.object({
@@ -1150,7 +1238,11 @@ export const appRouter = router({
           })
           .optional()
       )
-      .query(({ input }) => warehouseDb.listInventoryBalancePage(input)),
+      .query(async ({ ctx, input }) => {
+        const rows = await warehouseDb.listInventoryBalancePage(input);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return allowed === null ? rows : { ...rows, rows: rows.rows.filter(row => allowed.includes(row.warehouseId)) };
+      }),
     previewBalances: publicProcedure
       .input(
         z
@@ -1179,7 +1271,11 @@ export const appRouter = router({
           })
           .optional()
       )
-      .query(({ input }) => warehouseDb.listInventoryBalances(input)),
+      .query(async ({ ctx, input }) => {
+        const rows = await warehouseDb.listInventoryBalances(input);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return allowed === null ? rows : rows.filter(row => allowed.includes(row.warehouseId));
+      }),
     previewReportBalances: publicProcedure
       .input(
         z
@@ -1204,7 +1300,11 @@ export const appRouter = router({
           partyId: z.number().int().positive().nullable().optional(),
         })
       )
-      .query(({ input }) => warehouseDb.getMaterialCard(input)),
+      .query(async ({ ctx, input }) => {
+        if (input.warehouseId !== undefined) await assertWarehouseAccess(ctx.user, input.warehouseId);
+        else if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "يجب تحديد المستودع لعرض بطاقة المادة." });
+        return warehouseDb.getMaterialCard(input);
+      }),
     previewMaterialCard: publicProcedure
       .input(
         z.object({
@@ -1290,7 +1390,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         return warehouseDb.listMaterials(input?.search, input?.limit ?? 5000);
       }),
-    create: dataEntryProcedure
+    create: administratorProcedure
       .input(
         z.object({
           code: z.string().trim().min(1).max(64),
@@ -1304,7 +1404,7 @@ export const appRouter = router({
       .mutation(({ ctx, input }) =>
         warehouseDb.createMaterial(input, ctx.user.id)
       ),
-    update: dataEntryProcedure
+    update: administratorProcedure
       .input(
         z.object({
           id: z.number().int().positive(),

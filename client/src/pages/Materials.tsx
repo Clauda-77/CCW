@@ -27,7 +27,7 @@ export default function MaterialsPage() {
   const previewQuery = trpc.materials.previewList.useQuery({ search }, { enabled: usePreview });
   const query = usePreview ? previewQuery : liveQuery;
   const utils = trpc.useUtils();
-  const canManage = isAuthenticated && ["data_entry", "warehouse_keeper", "admin"].includes(user?.role ?? "user");
+  const canManage = isAuthenticated && user?.role === "admin";
   const canDelete = isAuthenticated && user?.role === "admin";
   const createMutation = trpc.materials.create.useMutation({
     onSuccess: async () => {

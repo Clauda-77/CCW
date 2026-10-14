@@ -55,7 +55,7 @@ type DashboardIdentity = {
 
 const roleLabels: Record<string, string> = {
   admin: "مدير",
-  reviewer: "مراجع",
+  reviewer: "مراقب مستودع",
   data_entry: "مدخل بيانات",
   warehouse_keeper: "أمين مستودع",
   user: "مستخدم",

@@ -30,7 +30,7 @@ export default function WarehousesPage() {
   const [partyForm, setPartyForm] = useState<PartyForm>(emptyParty);
   const [editingWarehouseId, setEditingWarehouseId] = useState<number | null>(null);
   const [editingPartyId, setEditingPartyId] = useState<number | null>(null);
-  const canManageWarehouse = isDevelopment || (isAuthenticated && ["warehouse_keeper", "admin"].includes(user?.role ?? "user"));
+  const canManageWarehouse = isDevelopment || (isAuthenticated && user?.role === "admin");
   const canManageParty = isDevelopment || (isAuthenticated && ["data_entry", "warehouse_keeper", "admin"].includes(user?.role ?? "user"));
   const canDeactivate = isDevelopment || user?.role === "admin";
   const canDeleteWarehouse = isAuthenticated && user?.role === "admin";

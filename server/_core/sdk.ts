@@ -206,7 +206,6 @@ class SDKServer {
       name: payload.name,
       warehouseId: payload.warehouseId ?? null,
       warehouseName: payload.warehouseName ?? null,
-
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -315,6 +314,11 @@ class SDKServer {
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
+      // في الدخول المحلي لا ننشئ أي مستخدم من جلسة مفقودة أو من refresh.
+      // إنشاء المستخدم المحلي مسموح فقط عبر users.create للمدير.
+      if (ENV.localDevLoginEnabled || !ENV.oAuthServerUrl) {
+        throw ForbiddenError("المستخدم المحلي غير موجود أو انتهت جلسته.");
+      }
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
         await db.upsertUser({
@@ -335,10 +339,8 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
+    // المستخدم موجود مسبقاً: حدّث وقت الدخول فقط ولا تنفّذ INSERT/UPSERT.
+    await db.touchUserLastSignedIn(user.openId);
 
     return {
       ...user,

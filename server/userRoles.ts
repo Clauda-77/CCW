@@ -23,7 +23,7 @@ export function assertRoleChangeAllowed(input: RoleChangeGuardInput) {
 
 /** هل يشوف كل المستودعات؟ */
 export function canViewAllWarehouses(role: WarehouseRole): boolean {
-  return role === "admin" || role === "reviewer";
+  return role === "admin";
 }
 
 /** هل يقدر ينشئ/يعدّل مذكرات؟ */
@@ -38,7 +38,7 @@ export function canApproveMemos(role: WarehouseRole): boolean {
 
 /** هل يقدر يعدّل المواد؟ */
 export function canManageMaterials(role: WarehouseRole): boolean {
-  return role === "admin" || role === "warehouse_keeper";
+  return role === "admin";
 }
 
 /** هل يقدر يدير المستخدمين والمستودعات؟ */
@@ -85,7 +85,7 @@ export const roleLabels: Record<WarehouseRole, string> = {
   user: "مستخدم",
   warehouse_keeper: "أمين مستودع",
   data_entry: "مدخل بيانات",
-  reviewer: "مراجع",
+  reviewer: "مراقب مستودع",
   admin: "مدير النظام",
 };
 

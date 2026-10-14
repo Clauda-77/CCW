@@ -461,16 +461,16 @@ export default function MemosPage({
   const canCreate =
     isDevelopment ||
     (isAuthenticated &&
-      ["data_entry", "warehouse_keeper", "admin"].includes(
+      ["data_entry", "warehouse_keeper", "reviewer", "admin"].includes(
         user?.role ?? "user"
       ));
   const canCreateParty =
     isAuthenticated &&
-    ["data_entry", "warehouse_keeper", "admin"].includes(user?.role ?? "user");
+    ["data_entry", "warehouse_keeper", "reviewer", "admin"].includes(user?.role ?? "user");
   const canCreateMaterial =
     isAuthenticated &&
-    ["data_entry", "warehouse_keeper", "admin"].includes(user?.role ?? "user");
-  const canApprove = isDevelopment || user?.role === "admin";
+    user?.role === "admin";
+  const canApprove = isDevelopment || ["reviewer", "admin"].includes(user?.role ?? "user");
   const clearForm = () => {
     setMemoNumber("");
     setWarehouseId("");

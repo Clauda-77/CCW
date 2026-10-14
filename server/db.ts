@@ -17,11 +17,13 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
   adminAuditLogs,
+  financialEntries,
   colleges,
   inventoryBalances,
   materials,
   memoItems,
   memos,
+  memoReconciliations,
   parties,
   stockMovements,
   users,
@@ -50,9 +52,25 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
-  const values: InsertUser = { openId: user.openId, lastSignedIn: new Date() };
-  const updateSet: Record<string, unknown> = { lastSignedIn: new Date() };
-  for (const field of ["name", "email", "loginMethod"] as const) {
+  const [existing] = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.openId, user.openId))
+    .limit(1);
+  const incomingName = typeof user.name === "string" ? user.name.trim() : "";
+  const safeName = incomingName || existing?.name?.trim() || "";
+  if (!safeName) throw new Error("لا يمكن حفظ المستخدم لأن اسمه غير متوفر.");
+
+  const values: InsertUser = {
+    openId: user.openId,
+    name: safeName,
+    lastSignedIn: new Date(),
+  };
+  const updateSet: Record<string, unknown> = {
+    name: safeName,
+    lastSignedIn: new Date(),
+  };
+  for (const field of ["email", "loginMethod"] as const) {
     if (user[field] !== undefined) {
       values[field] = user[field] ?? null;
       updateSet[field] = user[field] ?? null;
@@ -81,6 +99,16 @@ export async function getUserByOpenId(openId: string) {
     .where(eq(users.openId, openId))
     .limit(1);
   return result[0];
+}
+
+/** تحديث آخر دخول للمستخدم الموجود فقط؛ لا ينشئ سجلاً جديداً. */
+export async function touchUserLastSignedIn(openId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(users)
+    .set({ lastSignedIn: new Date() })
+    .where(eq(users.openId, openId));
 }
 
 export async function getUserById(id: number) {
@@ -230,6 +258,44 @@ export async function updateUserRole(input: {
       entityId: target.id,
       entityLabel: target.name ?? `#${target.id}`,
       details: `الدور السابق: ${target.role}؛ الدور الجديد: ${input.role}`,
+    });
+  });
+  return { success: true } as const;
+}
+
+export async function updateUserWarehouse(input: {
+  id: number;
+  warehouseId: number;
+  actorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const warehouse = await getWarehouseById(input.warehouseId);
+  if (!warehouse || !warehouse.isActive) {
+    throw new Error("المستودع المحدد غير موجود أو غير نشط.");
+  }
+  const [target] = await db
+    .select({ id: users.id, openId: users.openId, name: users.name })
+    .from(users)
+    .where(eq(users.id, input.id))
+    .limit(1);
+  if (!target) throw new Error("المستخدم غير موجود.");
+
+  await db.transaction(async tx => {
+    await tx.delete(userWarehouses).where(eq(userWarehouses.userId, input.id));
+    await tx.insert(userWarehouses).values({
+      userId: input.id,
+      warehouseId: input.warehouseId,
+      assignedBy: input.actorId,
+      assignedAt: new Date(),
+    });
+    await tx.insert(adminAuditLogs).values({
+      actorId: input.actorId,
+      action: "user_role_changed",
+      entityType: "user",
+      entityId: target.id,
+      entityLabel: target.name ?? `#${target.id}`,
+      details: `تغيير المستودع المسند إلى: ${warehouse.name} (#${warehouse.id}).`,
     });
   });
   return { success: true } as const;
@@ -1252,6 +1318,7 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
       orderNumber: memos.orderNumber,
       invoiceNumber: memos.invoiceNumber,
       referenceNumber: memos.referenceNumber,
+      warehouseId: memos.warehouseId,
       partyName: parties.name,
       partyType: parties.type,
       warehouseName: warehouses.name,
@@ -1266,6 +1333,166 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
     ...row,
     classification: legacyMemoClassification(row.type, row.notes),
   }));
+}
+
+export async function createFinancialEntry(input: {
+  entryNumber: string;
+  entryDate: Date;
+  warehouseId: number;
+  invoiceNumber?: string;
+  referenceNumber?: string;
+  amount: number;
+  currency?: string;
+  description?: string;
+  source?: "manual" | "excel" | "legacy";
+  createdBy: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  return db.transaction(async tx => {
+    const result = await tx.insert(financialEntries).values({
+      entryNumber: input.entryNumber.trim(),
+      entryDate: input.entryDate,
+      warehouseId: input.warehouseId,
+      invoiceNumber: input.invoiceNumber?.trim() || null,
+      referenceNumber: input.referenceNumber?.trim() || null,
+      amount: String(input.amount),
+      currency: input.currency?.trim() || "SYP",
+      description: input.description?.trim() || null,
+      source: input.source ?? "manual",
+      createdBy: input.createdBy,
+    });
+    const id = Number(result[0].insertId);
+    await writeAdminAudit(tx, {
+      actorId: input.createdBy,
+      action: "financial_entry_created",
+      entityType: "import_batch",
+      entityId: id,
+      entityLabel: input.entryNumber.trim(),
+      details: `إضافة قيد مالي بقيمة ${input.amount} ${input.currency ?? "SYP"}.`,
+    });
+    return { success: true as const, id };
+  });
+}
+
+export async function listFinancialEntries(warehouseIds?: number[] | null) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = warehouseIds?.length
+    ? [inArray(financialEntries.warehouseId, warehouseIds)]
+    : [];
+  return db
+    .select({
+      id: financialEntries.id,
+      entryNumber: financialEntries.entryNumber,
+      entryDate: financialEntries.entryDate,
+      warehouseId: financialEntries.warehouseId,
+      invoiceNumber: financialEntries.invoiceNumber,
+      referenceNumber: financialEntries.referenceNumber,
+      amount: financialEntries.amount,
+      currency: financialEntries.currency,
+      description: financialEntries.description,
+      source: financialEntries.source,
+      warehouseName: warehouses.name,
+    })
+    .from(financialEntries)
+    .innerJoin(warehouses, eq(financialEntries.warehouseId, warehouses.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(financialEntries.entryDate), desc(financialEntries.id));
+}
+
+export async function reconcileMemo(memoId: number, matchedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  return db.transaction(async tx => {
+    const [memo] = await tx
+      .select({
+        id: memos.id,
+        warehouseId: memos.warehouseId,
+        memoNumber: memos.memoNumber,
+        invoiceNumber: memos.invoiceNumber,
+        referenceNumber: memos.referenceNumber,
+      })
+      .from(memos)
+      .where(eq(memos.id, memoId))
+      .limit(1);
+    if (!memo) throw new Error("المذكرة غير موجودة.");
+    const [totals] = await tx
+      .select({ total: sql<string>`coalesce(sum(${memoItems.quantity} * coalesce(${memoItems.unitPrice}, 0)), 0)` })
+      .from(memoItems)
+      .where(eq(memoItems.memoId, memoId));
+    const keys = [memo.invoiceNumber, memo.referenceNumber, memo.memoNumber]
+      .filter(Boolean)
+      .map(value => String(value));
+    const candidates = await tx
+      .select()
+      .from(financialEntries)
+      .where(
+        and(
+          eq(financialEntries.warehouseId, memo.warehouseId),
+          or(
+            ...keys.flatMap(key => [
+              eq(financialEntries.entryNumber, key),
+              eq(financialEntries.invoiceNumber, key),
+              eq(financialEntries.referenceNumber, key),
+            ])
+          )
+        )
+      )
+      .limit(1);
+    const entry = candidates[0];
+    const memoTotal = Number(totals?.total ?? 0);
+    const entryAmount = Number(entry?.amount ?? 0);
+    const status = !entry ? "not_found" : Math.abs(memoTotal - entryAmount) < 0.01 ? "matched" : "mismatch";
+    const differenceAmount = entry ? memoTotal - entryAmount : memoTotal;
+    await tx.delete(memoReconciliations).where(eq(memoReconciliations.memoId, memoId));
+    await tx.insert(memoReconciliations).values({
+      memoId,
+      financialEntryId: entry?.id ?? null,
+      status,
+      differenceAmount: String(differenceAmount),
+      matchedBy,
+      matchedAt: new Date(),
+      notes: status === "not_found" ? "لم يتم العثور على قيد مالي مطابق." : null,
+    });
+    await writeAdminAudit(tx, {
+      actorId: matchedBy,
+      action: "memo_reconciled",
+      entityType: "memo",
+      entityId: memoId,
+      entityLabel: memo.memoNumber,
+      details: `نتيجة المطابقة المالية: ${status}؛ الفرق ${differenceAmount}.`,
+    });
+    return {
+      status,
+      memoTotal,
+      financialTotal: entry ? entryAmount : null,
+      differenceAmount,
+      financialEntry: entry ?? null,
+    };
+  });
+}
+
+export async function getMemoReconciliation(memoId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({
+      id: memoReconciliations.id,
+      memoId: memoReconciliations.memoId,
+      financialEntryId: memoReconciliations.financialEntryId,
+      status: memoReconciliations.status,
+      differenceAmount: memoReconciliations.differenceAmount,
+      matchedAt: memoReconciliations.matchedAt,
+      notes: memoReconciliations.notes,
+      entryNumber: financialEntries.entryNumber,
+      financialAmount: financialEntries.amount,
+    })
+    .from(memoReconciliations)
+    .leftJoin(financialEntries, eq(memoReconciliations.financialEntryId, financialEntries.id))
+    .where(eq(memoReconciliations.memoId, memoId))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getNextMemoSerialNumber() {
@@ -1313,6 +1540,7 @@ export async function listJournalLines(input: {
       materialName: materials.name,
       materialDescription: materials.description,
       unit: materials.unit,
+      warehouseId: memos.warehouseId,
       quantity: memoItems.quantity,
       partyName: parties.name,
       warehouseName: warehouses.name,

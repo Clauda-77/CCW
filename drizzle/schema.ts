@@ -33,6 +33,7 @@ export const userWarehouses = mysqlTable("userwarehouses", {
   assignedBy: int("assignedBy"),
   assignedAt: timestamp("assignedAt").defaultNow().notNull(),
 }, table => [
+  uniqueIndex("userwarehouses_user_warehouse_uq").on(table.userId, table.warehouseId),
   index("userwarehouses_userId_idx").on(table.userId),
   index("userwarehouses_warehouseId_idx").on(table.warehouseId),
   index("userwarehouses_assignedBy_idx").on(table.assignedBy),
@@ -164,7 +165,7 @@ export const importBatches = mysqlTable("importBatches", {
 export const adminAuditLogs = mysqlTable("adminAuditLogs", {
   id: int("id").autoincrement().primaryKey(),
   actorId: int("actorId").notNull().references(() => users.id),
-  action: mysqlEnum("action", ["memo_deleted", "user_role_changed", "user_created", "material_created", "material_updated", "material_deactivated", "material_deleted", "warehouse_created", "warehouse_updated", "warehouse_deactivated", "warehouse_deleted", "party_created", "party_updated", "party_deactivated", "college_created", "college_updated", "college_deactivated", "memo_created", "memo_reviewed", "memo_cancelled", "memo_approved", "import_committed", "memo_import_committed"]).notNull(),
+  action: mysqlEnum("action", ["memo_deleted", "user_role_changed", "user_created", "material_created", "material_updated", "material_deactivated", "material_deleted", "warehouse_created", "warehouse_updated", "warehouse_deactivated", "warehouse_deleted", "party_created", "party_updated", "party_deactivated", "college_created", "college_updated", "college_deactivated", "memo_created", "memo_reviewed", "memo_cancelled", "memo_approved", "import_committed", "memo_import_committed", "financial_entry_created", "memo_reconciled"]).notNull(),
   entityType: mysqlEnum("entityType", ["memo", "user", "material", "warehouse", "party", "college", "import_batch"]).notNull(),
   entityId: int("entityId").notNull(),
   entityLabel: varchar("entityLabel", { length: 255 }),
@@ -174,6 +175,41 @@ export const adminAuditLogs = mysqlTable("adminAuditLogs", {
   index("admin_audit_actor_idx").on(table.actorId),
   index("admin_audit_created_idx").on(table.createdAt),
   index("admin_audit_entity_idx").on(table.entityType, table.entityId),
+]);
+
+export const financialEntries = mysqlTable("financialEntries", {
+  id: int("id").autoincrement().primaryKey(),
+  entryNumber: varchar("entryNumber", { length: 128 }).notNull(),
+  entryDate: timestamp("entryDate").notNull(),
+  warehouseId: int("warehouseId").notNull().references(() => warehouses.id),
+  invoiceNumber: varchar("invoiceNumber", { length: 128 }),
+  referenceNumber: varchar("referenceNumber", { length: 128 }),
+  amount: decimal("amount", { precision: 18, scale: 2 }).notNull().default("0"),
+  currency: varchar("currency", { length: 16 }).default("SYP").notNull(),
+  description: text("description"),
+  source: mysqlEnum("source", ["manual", "excel", "legacy"]).default("manual").notNull(),
+  createdBy: int("createdBy").notNull().references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [
+  uniqueIndex("financial_entries_number_warehouse_uq").on(table.entryNumber, table.warehouseId),
+  index("financial_entries_date_idx").on(table.entryDate),
+  index("financial_entries_invoice_idx").on(table.invoiceNumber),
+  index("financial_entries_warehouse_idx").on(table.warehouseId),
+]);
+
+export const memoReconciliations = mysqlTable("memoReconciliations", {
+  id: int("id").autoincrement().primaryKey(),
+  memoId: int("memoId").notNull().references(() => memos.id),
+  financialEntryId: int("financialEntryId").references(() => financialEntries.id),
+  status: mysqlEnum("status", ["pending", "matched", "mismatch", "not_found", "waived"]).default("pending").notNull(),
+  differenceAmount: decimal("differenceAmount", { precision: 18, scale: 2 }).default("0").notNull(),
+  matchedBy: int("matchedBy").references(() => users.id),
+  matchedAt: timestamp("matchedAt"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [
+  uniqueIndex("memo_reconciliations_memo_uq").on(table.memoId),
+  index("memo_reconciliations_status_idx").on(table.status),
 ]);
 
 export type User = typeof users.$inferSelect;

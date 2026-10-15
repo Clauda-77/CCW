@@ -230,6 +230,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   CheckCircle2,
+  ClipboardCheck,
   FilePlus2,
   FileText,
   PackageSearch,
@@ -242,6 +243,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   classifyMemo,
@@ -297,6 +299,7 @@ export default function MemosPage({
   const accent = inbound ? "#0071ba" : "#d9442f";
   const Icon = inbound ? ArrowDownToLine : ArrowUpFromLine;
   const { isAuthenticated, user } = useAuth();
+  const [, setLocation] = useLocation();
   const isDevelopment = import.meta.env.DEV;
   const [open, setOpen] = useState(false);
   const [pickerLine, setPickerLine] = useState<number | null>(null);
@@ -1804,6 +1807,14 @@ export default function MemosPage({
                         </Badge>
                       </td>
                       <td className="px-5 py-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setLocation(`/memos/${memo.id}`)}
+                        >
+                          <ClipboardCheck className="ml-1 h-3.5 w-3.5 text-[#17698a]" />
+                          التفاصيل والمطابقة
+                        </Button>
                         {canCreate &&
                           (memo.status === "draft" ||
                             memo.status === "pending_review") && (

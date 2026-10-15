@@ -150,7 +150,7 @@ export const stockMovements = mysqlTable("stockMovements", {
 
 export const importBatches = mysqlTable("importBatches", {
   id: int("id").autoincrement().primaryKey(),
-  category: mysqlEnum("category", ["materials", "balances", "memos", "parties"]).notNull(),
+  category: mysqlEnum("category", ["materials", "balances", "memos", "parties", "finance"]).notNull(),
   originalFilename: varchar("originalFilename", { length: 255 }).notNull(),
   storageKey: varchar("storageKey", { length: 500 }),
   status: mysqlEnum("status", ["uploaded", "validating", "validated", "imported", "failed"]).default("uploaded").notNull(),
@@ -183,17 +183,21 @@ export const financialEntries = mysqlTable("financialEntries", {
   entryDate: timestamp("entryDate").notNull(),
   warehouseId: int("warehouseId").notNull().references(() => warehouses.id),
   invoiceNumber: varchar("invoiceNumber", { length: 128 }),
+  disbursementNumber: varchar("disbursementNumber", { length: 128 }),
+  receiptMemoNumber: varchar("receiptMemoNumber", { length: 128 }),
   referenceNumber: varchar("referenceNumber", { length: 128 }),
   amount: decimal("amount", { precision: 18, scale: 2 }).notNull().default("0"),
   currency: varchar("currency", { length: 16 }).default("SYP").notNull(),
   description: text("description"),
-  source: mysqlEnum("source", ["manual", "excel", "legacy"]).default("manual").notNull(),
+  source: mysqlEnum("source", ["manual", "excel", "legacy", "memo_auto"]).default("manual").notNull(),
   createdBy: int("createdBy").notNull().references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => [
   uniqueIndex("financial_entries_number_warehouse_uq").on(table.entryNumber, table.warehouseId),
   index("financial_entries_date_idx").on(table.entryDate),
   index("financial_entries_invoice_idx").on(table.invoiceNumber),
+  index("financial_entries_disbursement_idx").on(table.disbursementNumber),
+  index("financial_entries_receipt_memo_idx").on(table.receiptMemoNumber),
   index("financial_entries_warehouse_idx").on(table.warehouseId),
 ]);
 

@@ -574,6 +574,10 @@ import {
   validateMemoWorkbooks,
   validateWorkbook,
 } from "./importValidator";
+import {
+  commitFinancialWorkbook,
+  validateFinancialWorkbook,
+} from "./financialImport";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
@@ -1142,21 +1146,38 @@ export const appRouter = router({
       const allowed = await getAccessibleWarehouseIds(ctx.user);
       return warehouseDb.listFinancialEntries(allowed);
     }),
-    createEntry: warehouseKeeperProcedure
+    reconciliationSummary: protectedProcedure.query(async ({ ctx }) => {
+      const allowed = await getAccessibleWarehouseIds(ctx.user);
+      return warehouseDb.listFinanceReconciliationSummary(allowed);
+    }),
+    reconcileAll: reviewerProcedure.mutation(async ({ ctx }) => {
+      const allowed = await getAccessibleWarehouseIds(ctx.user);
+      const memos = [
+        ...(await warehouseDb.listMemos("inbound")),
+        ...(await warehouseDb.listMemos("outbound")),
+      ].filter(memo => memo.status !== "cancelled" && (allowed === null || allowed.includes(memo.warehouseId)));
+      let matched = 0;
+      let mismatch = 0;
+      let notFound = 0;
+      for (const memo of memos) {
+        const result = await warehouseDb.reconcileMemo(memo.id, ctx.user.id);
+        if (result.status === "matched") matched += 1;
+        else if (result.status === "mismatch") mismatch += 1;
+        else if (result.status === "not_found") notFound += 1;
+      }
+      return { total: memos.length, matched, mismatch, notFound };
+    }),
+    validateImport: administratorProcedure
+      .input(z.object({ base64: z.string().min(1).max(40_000_000) }))
+      .mutation(({ input }) => validateFinancialWorkbook(input.base64)),
+    commitImport: administratorProcedure
       .input(z.object({
-        entryNumber: z.string().trim().min(1).max(128),
-        entryDate: z.date(),
-        warehouseId: z.number().int().positive(),
-        invoiceNumber: z.string().trim().max(128).optional(),
-        referenceNumber: z.string().trim().max(128).optional(),
-        amount: z.number().min(0),
-        currency: z.string().trim().max(16).optional(),
-        description: z.string().trim().max(5000).optional(),
+        base64: z.string().min(1).max(40_000_000),
+        filename: z.string().trim().min(1).max(255),
       }))
-      .mutation(async ({ ctx, input }) => {
-        await assertWarehouseAccess(ctx.user, input.warehouseId);
-        return warehouseDb.createFinancialEntry({ ...input, createdBy: ctx.user.id });
-      }),
+      .mutation(({ ctx, input }) =>
+        commitFinancialWorkbook({ ...input, createdBy: ctx.user.id })
+      ),
     reconciliation: protectedProcedure
       .input(z.object({ memoId: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {

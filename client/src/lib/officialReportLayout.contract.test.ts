@@ -22,21 +22,34 @@ describe("عقد طباعة النماذج الرسمية غير التابعة 
   });
 
   it("يضع معرفات جدول الجرد يسارًا والتاريخ تحت العنوان المركزي", () => {
-    const inventory = htmlFor("inventory", [[1, "1122", "ظرف أسمر وسط", "", "عدد", "", "عدد", "20", "عدد", "20", "", "", "", "", ""]]);
-    expect(inventory).toContain("رقم المجلد<br>الرقم المتسلسل");
+    const write = vi.fn();
+    renderOfficialReport({ document: { open: vi.fn(), write, close: vi.fn() }, focus: vi.fn() } as unknown as Window, {
+      type: "inventory",
+      title: "تقرير",
+      dateRange: "من 2026/1/1 إلى 2026/8/16",
+      rows: [[1, "1122", "ظرف أسمر وسط", "", "عدد", "", "عدد", "20", "عدد", "20", "", "", "", "", ""]],
+    });
+    const inventory = String(write.mock.calls[0]?.[0] ?? "");
+    expect(inventory).toContain("نموذج مستودع رقم 18<br>رقم المجلد<br>الرقم المتسلسل");
     expect(inventory).toContain(".inventory-identifiers{padding-top:8mm;direction:rtl;text-align:right;justify-self:end;white-space:nowrap;transform:translateX(12mm)}");
     expect(inventory).toContain(".inventory-header .title p{margin-top:5mm;text-align:center}");
-    expect(inventory).toMatch(/<h1>جدول الجرد<\/h1><p>[^<]+<\/p>/);
+    expect(inventory).toMatch(/<h1>جدول جرد<\/h1><p>بتاريخ [^<]+<\/p>/);
+    expect(inventory).toContain("بتاريخ 2026/8/16");
     expect(inventory).toContain("جدول الجرد");
+    expect(inventory).toContain("أمين المستودع");
+    expect(inventory).toContain("أعضاء لجنة الجرد");
+    expect(inventory).toContain("رئيس اللجنة");
+    expect(inventory).not.toContain("................");
+    expect(inventory).not.toContain("............");
     expect(inventory).not.toMatch(/<td>0<\/td>/);
   });
 
-  it("يحذف صفوف الجرد الخالية من الرصيد والحركة ويبقي الصفوف ذات القيمة", () => {
+  it("يبقي صفوف الجرد حتى عندما تكون الكميات صفرًا لإتاحة تعبئة الجرد اليدوية", () => {
     const inventory = htmlFor("inventory", [
       [1, "000", "مادة بلا رصيد", "", "عدد", "", "عدد", "0", "عدد", "0", "0", "0", "", "", ""],
       [2, "1122", "مادة لها رصيد", "", "عدد", "", "عدد", "20", "عدد", "20", "", "", "", "", ""],
     ]);
-    expect(inventory).not.toContain("مادة بلا رصيد");
+    expect(inventory).toContain("مادة بلا رصيد");
     expect(inventory).toContain("مادة لها رصيد");
   });
 
@@ -70,6 +83,8 @@ describe("عقد طباعة النماذج الرسمية غير التابعة 
     const movement = htmlFor("monthlyMovement", [[1, "1111", "مادة", "", 5, 0, 0, 0, 5, ""]]);
     ["جدول الجرد", "سعر", "الفروق الجردية", "الأسباب والمبررات", "رأي أمين المستودع", "رأي رئيس المستودع", "ملاحظات"].forEach(label => expect(inventory).toContain(label));
     expect(inventory.match(/<col style=/g)).toHaveLength(15);
+    expect(inventory).toContain("@page{size:297mm 210mm;margin:7mm}");
+    expect(inventory).toContain(".inventory-signatures{display:grid;grid-template-columns:1fr 1.7fr 1.3fr .8fr .8fr;gap:8px;");
     expect(inventory).toContain("thead{display:table-header-group}");
     expect(inventory).toContain("page-break-inside:avoid");
     ["جدول حركة المواد", "رصيد أول الشهر", "الاستلام", "الإدخال", "الإخراجات", "أمين المستودع", "Page No"].forEach(label => expect(movement).toContain(label));

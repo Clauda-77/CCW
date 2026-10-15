@@ -9,6 +9,7 @@ import AccessPage from "./pages/Access";
 import AdminAuditPage from "./pages/AdminAudit";
 import CollegesPage from "./pages/Colleges";
 import Home from "./pages/Home";
+import FinancePage from "./pages/Finance";
 import ImportPage from "./pages/Import";
 import InventoryPage from "./pages/Inventory";
 import LoginPage from "./pages/Login";
@@ -47,6 +48,7 @@ function Router() {
       <Route path={"/access"} component={withShell(AccessPage)} />
       <Route path={"/admin-audit"} component={withShell(AdminAuditPage)} />
       <Route path={"/statistics"} component={withShell(StatisticsPage)} />
+      <Route path={"/finance"} component={withShell(FinancePage)} />
       <Route path={"/users"} component={withShell(UsersPage)} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

@@ -622,6 +622,9 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    assignedWarehouses: protectedProcedure.query(({ ctx }) =>
+      warehouseDb.listUserWarehouses(ctx.user.id)
+    ),
     loginWarehouses: publicProcedure.query(async () => {
       const warehouses = await warehouseDb.listWarehouses("", 500);
       return warehouses.filter(warehouse => warehouse.isActive);
@@ -1021,8 +1024,36 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await assertWarehouseAccess(ctx.user, input.warehouseId);
-        return warehouseDb.createMemo({ ...input, createdBy: ctx.user.id });
+        let warehouseId = input.warehouseId;
+        if (ctx.user.role !== "admin") {
+          const assigned = await warehouseDb.listUserWarehouses(ctx.user.id);
+          const sessionWarehouseId = (ctx.user as { warehouseId?: number | null }).warehouseId;
+          const assignedWarehouseId =
+            sessionWarehouseId && assigned.some(row => row.id === sessionWarehouseId)
+              ? sessionWarehouseId
+              : assigned.length === 1
+                ? assigned[0].id
+                : null;
+          if (!assignedWarehouseId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "لا يوجد مستودع واحد مسند إلى حسابك. اطلب من المدير إسناد المستودع.",
+            });
+          }
+          if (input.warehouseId !== assignedWarehouseId) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "لا يمكنك إنشاء مذكرة على مستودع غير مستودعك المسند.",
+            });
+          }
+          warehouseId = assignedWarehouseId;
+        }
+        await assertWarehouseAccess(ctx.user, warehouseId);
+        return warehouseDb.createMemo({
+          ...input,
+          warehouseId,
+          createdBy: ctx.user.id,
+        });
       }),
     details: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
@@ -1111,7 +1142,7 @@ export const appRouter = router({
       const allowed = await getAccessibleWarehouseIds(ctx.user);
       return warehouseDb.listFinancialEntries(allowed);
     }),
-    createEntry: reviewerProcedure
+    createEntry: warehouseKeeperProcedure
       .input(z.object({
         entryNumber: z.string().trim().min(1).max(128),
         entryDate: z.date(),

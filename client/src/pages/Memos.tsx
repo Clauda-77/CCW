@@ -230,6 +230,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   CheckCircle2,
+  ClipboardCheck,
   FilePlus2,
   FileText,
   PackageSearch,
@@ -242,6 +243,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import {
   classifyMemo,
@@ -297,6 +299,7 @@ export default function MemosPage({
   const accent = inbound ? "#0071ba" : "#d9442f";
   const Icon = inbound ? ArrowDownToLine : ArrowUpFromLine;
   const { isAuthenticated, user } = useAuth();
+  const [, setLocation] = useLocation();
   const isDevelopment = import.meta.env.DEV;
   const [open, setOpen] = useState(false);
   const [pickerLine, setPickerLine] = useState<number | null>(null);
@@ -334,6 +337,18 @@ export default function MemosPage({
   const [memoNotes, setMemoNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
   const usePreview = isDevelopment && !isAuthenticated;
+  // تشغيل المشروع محلياً لا يمنح صلاحية تغيير المستودع؛ المدير فقط يستطيع ذلك.
+  const canChooseWarehouse = user?.role === "admin";
+  const sessionWarehouseId = (user as typeof user & { warehouseId?: number | null } | null)?.warehouseId ?? null;
+  const assignedWarehouses = trpc.auth.assignedWarehouses.useQuery(undefined, {
+    enabled: isAuthenticated && !canChooseWarehouse,
+  });
+  const assignedWarehouseId = sessionWarehouseId
+    ?? (assignedWarehouses.data?.length === 1 ? assignedWarehouses.data[0].id : null);
+  useEffect(() => {
+    if (!open || editTargetId || canChooseWarehouse) return;
+    if (assignedWarehouseId) setWarehouseId(String(assignedWarehouseId));
+  }, [assignedWarehouseId, canChooseWarehouse, editTargetId, open]);
   const live = trpc.memos.list.useQuery(
     { type: kind },
     { enabled: isAuthenticated }
@@ -473,7 +488,7 @@ export default function MemosPage({
   const canApprove = isDevelopment || ["reviewer", "admin"].includes(user?.role ?? "user");
   const clearForm = () => {
     setMemoNumber("");
-    setWarehouseId("");
+    setWarehouseId(!canChooseWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : "");
     setPartyId("");
     setFolderNumber("");
     setOrderNumber("");
@@ -715,6 +730,12 @@ export default function MemosPage({
   }, [priceAllowed]);
   useEffect(() => {
     if (!open) return;
+    if (!canChooseWarehouse) {
+      if (assignedWarehouseId) setWarehouseId(String(assignedWarehouseId));
+      if (hasFinancialNumber && nextSerialNumber)
+        setMemoNumber(current => current || nextSerialNumber);
+      return;
+    }
     const currentWarehouse =
       entities?.warehouses.find(warehouse =>
         warehouse.name.trim().includes("المستودع المركزي")
@@ -726,11 +747,11 @@ export default function MemosPage({
         warehouse => warehouse.isActive && warehouse.kind === "central"
       ) ??
       entities?.warehouses.find(warehouse => warehouse.isActive);
-    if (currentWarehouse && !inboundEntry)
+    if (currentWarehouse)
       setWarehouseId(current => current || String(currentWarehouse.id));
     if (hasFinancialNumber && nextSerialNumber)
       setMemoNumber(current => current || nextSerialNumber);
-  }, [entities?.warehouses, nextSerialNumber, open]);
+  }, [assignedWarehouseId, canChooseWarehouse, entities?.warehouses, hasFinancialNumber, nextSerialNumber, open]);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (materialSearchEnterRef.current) {
@@ -893,6 +914,7 @@ export default function MemosPage({
                 <Label className="text-[11px] text-[#4b7792]">المستودع</Label>
                 <select
                   required
+                  disabled={!canChooseWarehouse}
                   className="mt-1.5 h-9 w-full rounded-md border border-[#b8ddeb] bg-white px-2 text-sm font-semibold"
                   value={warehouseId}
                   onChange={event => setWarehouseId(event.target.value)}
@@ -904,6 +926,16 @@ export default function MemosPage({
                     </option>
                   ))}
                 </select>
+                {!canChooseWarehouse && (
+                  <p className="mt-1 text-[10px] text-[#4b7792]">
+                    المستودع محدد حسب حسابك، وتغييره متاح للمدير فقط.
+                  </p>
+                )}
+                {!canChooseWarehouse && (
+                  <p className="mt-1 text-[10px] text-[#4b7792]">
+                    المستودع محدد حسب إسناد حسابك، وتغييره متاح للمدير فقط.
+                  </p>
+                )}
               </div>
               <div className="bg-white/95 p-2">
                 <MemoPartyPicker
@@ -1775,6 +1807,14 @@ export default function MemosPage({
                         </Badge>
                       </td>
                       <td className="px-5 py-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setLocation(`/memos/${memo.id}`)}
+                        >
+                          <ClipboardCheck className="ml-1 h-3.5 w-3.5 text-[#17698a]" />
+                          التفاصيل والمطابقة
+                        </Button>
                         {canCreate &&
                           (memo.status === "draft" ||
                             memo.status === "pending_review") && (

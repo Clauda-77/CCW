@@ -1388,6 +1388,8 @@ export async function listFinancialEntries(warehouseIds?: number[] | null) {
       entryDate: financialEntries.entryDate,
       warehouseId: financialEntries.warehouseId,
       invoiceNumber: financialEntries.invoiceNumber,
+      disbursementNumber: financialEntries.disbursementNumber,
+      receiptMemoNumber: financialEntries.receiptMemoNumber,
       referenceNumber: financialEntries.referenceNumber,
       amount: financialEntries.amount,
       currency: financialEntries.currency,
@@ -1435,6 +1437,7 @@ export async function reconcileMemo(memoId: number, matchedBy: number) {
               eq(financialEntries.entryNumber, key),
               eq(financialEntries.invoiceNumber, key),
               eq(financialEntries.referenceNumber, key),
+              eq(financialEntries.receiptMemoNumber, key),
             ])
           )
         )
@@ -1443,7 +1446,12 @@ export async function reconcileMemo(memoId: number, matchedBy: number) {
     const entry = candidates[0];
     const memoTotal = Number(totals?.total ?? 0);
     const entryAmount = Number(entry?.amount ?? 0);
-    const status = !entry ? "not_found" : Math.abs(memoTotal - entryAmount) < 0.01 ? "matched" : "mismatch";
+    const receiptMemoMatches = !entry?.receiptMemoNumber || entry.receiptMemoNumber === memo.memoNumber;
+    const status = !entry
+      ? "not_found"
+      : receiptMemoMatches && Math.abs(memoTotal - entryAmount) < 0.01
+        ? "matched"
+        : "mismatch";
     const differenceAmount = entry ? memoTotal - entryAmount : memoTotal;
     await tx.delete(memoReconciliations).where(eq(memoReconciliations.memoId, memoId));
     await tx.insert(memoReconciliations).values({
@@ -1453,7 +1461,11 @@ export async function reconcileMemo(memoId: number, matchedBy: number) {
       differenceAmount: String(differenceAmount),
       matchedBy,
       matchedAt: new Date(),
-      notes: status === "not_found" ? "لم يتم العثور على قيد مالي مطابق." : null,
+      notes: status === "not_found"
+        ? "لم يتم العثور على قيد مالي مطابق."
+        : !receiptMemoMatches
+          ? `رقم مذكرة الاستلام في المالية (${entry?.receiptMemoNumber}) لا يطابق مذكرة المستودع (${memo.memoNumber}).`
+          : null,
     });
     await writeAdminAudit(tx, {
       actorId: matchedBy,
@@ -2290,4 +2302,36 @@ export async function deleteMemo(id: number, deletedBy: number) {
     });
     return { success: true as const, deletedBy };
   });
+}
+
+export async function listFinanceReconciliationSummary(warehouseIds?: number[] | null) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = warehouseIds?.length
+    ? [inArray(memos.warehouseId, warehouseIds)]
+    : [];
+  return db
+    .select({
+      reconciliationId: memoReconciliations.id,
+      status: memoReconciliations.status,
+      differenceAmount: memoReconciliations.differenceAmount,
+      matchedAt: memoReconciliations.matchedAt,
+      memoId: memos.id,
+      memoNumber: memos.memoNumber,
+      memoDate: memos.memoDate,
+      invoiceNumber: memos.invoiceNumber,
+      warehouseId: memos.warehouseId,
+      warehouseName: warehouses.name,
+      financialEntryId: financialEntries.id,
+      entryNumber: financialEntries.entryNumber,
+      disbursementNumber: financialEntries.disbursementNumber,
+      receiptMemoNumber: financialEntries.receiptMemoNumber,
+      financialAmount: financialEntries.amount,
+    })
+    .from(memoReconciliations)
+    .innerJoin(memos, eq(memoReconciliations.memoId, memos.id))
+    .innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
+    .leftJoin(financialEntries, eq(memoReconciliations.financialEntryId, financialEntries.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(memoReconciliations.matchedAt), desc(memoReconciliations.id));
 }

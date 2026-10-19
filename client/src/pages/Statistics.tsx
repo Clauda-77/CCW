@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { useState } from "react";
 
 const number = (value: unknown) => Number(value ?? 0).toLocaleString("ar-SY", { maximumFractionDigits: 3 });
+const money = (value: unknown) => Number(value ?? 0).toLocaleString("ar-SY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monthLabel = (value: string) => {
   const [year, month] = value.split("-");
   return year && month ? `${month}/${year}` : value;
@@ -59,9 +60,13 @@ export default function StatisticsPage() {
     toDate: toDate ? new Date(`${toDate}T23:59:59.999`) : undefined,
   };
   const queryEnabled = isAuthenticated && canView && !invalidRange;
+  const selectorQueriesEnabled = isAuthenticated && canView;
   const live = trpc.statistics.dashboard.useQuery(dateFilters, { enabled: queryEnabled && !isDevelopment });
   const preview = trpc.statistics.previewDashboard.useQuery(dateFilters, { enabled: queryEnabled && isDevelopment });
   const query = isDevelopment ? preview : live;
+  const [stockMaterialId, setStockMaterialId] = useState("");
+  const [stockWarehouseId, setStockWarehouseId] = useState("");
+  const [purchaseQuantity, setPurchaseQuantity] = useState("");
   const [deliveryPartyId, setDeliveryPartyId] = useState("");
   const [deliveryMaterialId, setDeliveryMaterialId] = useState("");
   const [deliveryFromDate, setDeliveryFromDate] = useState("");
@@ -75,10 +80,29 @@ export default function StatisticsPage() {
   };
   const partiesLive = trpc.entities.listParties.useQuery({ limit: 5000 }, { enabled: queryEnabled && !isDevelopment });
   const partiesPreview = trpc.entities.previewListParties.useQuery({ limit: 5000 }, { enabled: queryEnabled && isDevelopment });
-  const materialsLive = trpc.materials.list.useQuery({ limit: 5000 }, { enabled: queryEnabled && !isDevelopment });
-  const materialsPreview = trpc.materials.previewList.useQuery({ limit: 5000 }, { enabled: queryEnabled && isDevelopment });
+  const materialsLive = trpc.materials.list.useQuery({ limit: 5000 }, { enabled: selectorQueriesEnabled && !isDevelopment });
+  const materialsPreview = trpc.materials.previewList.useQuery({ limit: 5000 }, { enabled: selectorQueriesEnabled && isDevelopment });
+  const warehousesLive = trpc.entities.listWarehouses.useQuery({ limit: 500 }, { enabled: selectorQueriesEnabled && !isDevelopment });
+  const warehousesPreview = trpc.entities.previewListWarehouses.useQuery({ limit: 500 }, { enabled: selectorQueriesEnabled && isDevelopment });
   const partyOptions = (isDevelopment ? partiesPreview.data : partiesLive.data) ?? [];
   const materialOptions = (isDevelopment ? materialsPreview.data : materialsLive.data) ?? [];
+  const warehouseOptions = (isDevelopment ? warehousesPreview.data : warehousesLive.data) ?? [];
+  const stockSelectionReady = Boolean(stockMaterialId && stockWarehouseId);
+  const stockBalanceInput = {
+    materialId: Number(stockMaterialId) || 1,
+    warehouseId: Number(stockWarehouseId) || 1,
+  };
+  const stockBalanceLive = trpc.statistics.materialWarehouseBalance.useQuery(stockBalanceInput, { enabled: selectorQueriesEnabled && stockSelectionReady && !isDevelopment });
+  const stockBalancePreview = trpc.statistics.previewMaterialWarehouseBalance.useQuery(stockBalanceInput, { enabled: selectorQueriesEnabled && stockSelectionReady && isDevelopment });
+  const stockBalanceQuery = isDevelopment ? stockBalancePreview : stockBalanceLive;
+  const stockCostLive = trpc.statistics.materialWarehouseCostEstimate.useQuery(stockBalanceInput, { enabled: selectorQueriesEnabled && stockSelectionReady && !isDevelopment });
+  const stockCostPreview = trpc.statistics.previewMaterialWarehouseCostEstimate.useQuery(stockBalanceInput, { enabled: selectorQueriesEnabled && stockSelectionReady && isDevelopment });
+  const stockCostQuery = isDevelopment ? stockCostPreview : stockCostLive;
+  const parsedPurchaseQuantity = Number(purchaseQuantity);
+  const validPurchaseQuantity = purchaseQuantity.trim() !== "" && Number.isFinite(parsedPurchaseQuantity) && parsedPurchaseQuantity > 0;
+  const estimatedPurchaseCost = stockCostQuery.data?.unitPrice != null && validPurchaseQuantity
+    ? parsedPurchaseQuantity * Number(stockCostQuery.data.unitPrice)
+    : null;
   const deliveredLive = trpc.statistics.deliveredQuantity.useQuery(deliveryFilters, { enabled: queryEnabled && !invalidDeliveryRange && !isDevelopment });
   const deliveredPreview = trpc.statistics.previewDeliveredQuantity.useQuery(deliveryFilters, { enabled: queryEnabled && !invalidDeliveryRange && isDevelopment });
   const deliveredQuery = isDevelopment ? deliveredPreview : deliveredLive;
@@ -88,6 +112,42 @@ export default function StatisticsPage() {
   return <div className="mx-auto max-w-[1480px] space-y-6" dir="rtl">
     <section><p className="text-sm font-semibold text-[#17698a]">أدوات المستودع</p><h1 className="mt-1 text-3xl font-extrabold tracking-tight">الإحصائيات</h1><p className="mt-2 text-sm leading-7 text-muted-foreground">ملخص تشغيلي مبني على المذكرات المعتمدة وحركات المخزون والأرصدة الحالية.</p></section>
     <Card className="soft-shadow border-white/75 bg-white/90"><CardContent className="p-5"><div className="grid gap-4 md:grid-cols-2"><label className="space-y-2 text-sm font-extrabold text-[#124c69]"><span>من تاريخ</span><Input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} className="h-10 rounded-xl" /></label><label className="space-y-2 text-sm font-extrabold text-[#124c69]"><span>إلى تاريخ</span><Input type="date" value={toDate} onChange={event => setToDate(event.target.value)} className="h-10 rounded-xl" /></label></div>{invalidRange ? <p className="mt-3 text-sm font-bold text-red-700">تاريخ البداية يجب أن يكون قبل تاريخ النهاية أو مساويًا له.</p> : <p className="mt-3 text-xs text-muted-foreground">اترك التاريخين فارغين لعرض النتائج منذ بداية النظام. عند تحديدهما ستظهر النتائج ضمن الفترة فقط.</p>}</CardContent></Card>
+    <Card className="soft-shadow border-white/75 bg-white/90">
+      <CardHeader><CardTitle className="text-xl font-extrabold text-[#124c69]">رصيد مادة في مستودع محدد</CardTitle><p className="text-sm leading-7 text-muted-foreground">اختر المادة والمستودع لمعرفة الكمية الموجودة حاليًا من هذه المادة في المستودع المحدد.</p></CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 text-sm font-extrabold text-[#124c69]"><span>المادة</span><SearchableSelect value={stockMaterialId} onChange={setStockMaterialId} placeholder="اختر المادة" searchPlaceholder="ابحث باسم المادة أو رمزها…" options={materialOptions.map(material => ({ value: String(material.id), label: `${material.name} — ${material.code}`, searchText: `${material.name} ${material.code}` }))} /></label>
+          <label className="space-y-2 text-sm font-extrabold text-[#124c69]"><span>المستودع</span><SearchableSelect value={stockWarehouseId} onChange={setStockWarehouseId} placeholder="اختر المستودع" searchPlaceholder="ابحث باسم المستودع أو رمزه…" options={warehouseOptions.map(warehouse => ({ value: String(warehouse.id), label: `${warehouse.name} — ${warehouse.code}`, searchText: `${warehouse.name} ${warehouse.code}` }))} /></label>
+        </div>
+        {!stockSelectionReady && <p className="rounded-xl bg-slate-50 px-4 py-5 text-center text-sm text-muted-foreground">حدد المادة والمستودع لعرض الرصيد الحالي.</p>}
+        {stockSelectionReady && stockBalanceQuery.isLoading && <p className="py-5 text-center text-sm text-muted-foreground">جار تحميل رصيد المادة…</p>}
+        {stockSelectionReady && stockBalanceQuery.isError && <p className="rounded-xl bg-red-50 px-4 py-5 text-center text-sm font-bold text-red-700">تعذر تحميل الرصيد. تأكد من صلاحية الوصول للمستودع ثم أعد المحاولة.</p>}
+        {stockSelectionReady && stockBalanceQuery.data && <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-[#c7e8f3] bg-[#f2fbfe] p-6 text-center"><strong className="block text-4xl font-extrabold text-[#07518e]">{number(stockBalanceQuery.data.quantity)}</strong><span className="mt-2 block text-sm font-bold text-[#17698a]">{stockBalanceQuery.data.unit} متوفر حاليًا</span></div>
+          <div className="flex flex-col justify-center gap-2 rounded-xl border border-slate-100 bg-slate-50/70 p-5"><p className="font-extrabold text-[#124c69]">{stockBalanceQuery.data.materialName}</p><p className="text-sm text-muted-foreground">رمز المادة: {stockBalanceQuery.data.materialCode}</p><p className="text-sm text-muted-foreground">المستودع: {stockBalanceQuery.data.warehouseName}</p></div>
+        </div>}
+        <div className="space-y-4 rounded-xl border border-[#c7e8f3] bg-[#f8fdff] p-4">
+          <div>
+            <h3 className="font-extrabold text-[#124c69]">حاسبة تكلفة كمية من المادة</h3>
+            <p className="mt-1 text-xs leading-6 text-muted-foreground">أدخل الكمية المطلوبة؛ يحسب التقدير على أساس آخر سعر شراء معتمد للمادة في المستودع المختار.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm font-extrabold text-[#124c69]"><span>الكمية المطلوبة للشراء</span><Input type="number" min="0" step="any" value={purchaseQuantity} onChange={event => setPurchaseQuantity(event.target.value)} placeholder="مثال: 1000" className="h-10 rounded-xl" /></label>
+            <div className="flex min-h-20 flex-col justify-center rounded-xl border border-white bg-white/80 p-4">
+              {!stockSelectionReady && <p className="text-center text-sm text-muted-foreground">اختر المادة والمستودع أعلاه لحساب التكلفة.</p>}
+              {stockSelectionReady && stockCostQuery.isLoading && <p className="text-center text-sm text-muted-foreground">جار تحميل آخر سعر شراء…</p>}
+              {stockSelectionReady && stockCostQuery.isError && <p className="text-center text-sm font-bold text-red-700">تعذر تحميل سعر الشراء للمادة.</p>}
+              {stockSelectionReady && !stockCostQuery.isLoading && !stockCostQuery.isError && stockCostQuery.data === null && <p className="text-center text-sm text-muted-foreground">لا يوجد سعر شراء مسجل ومعتمد لهذه المادة في المستودع.</p>}
+              {stockCostQuery.data?.unitPrice != null && <>
+                <p className="text-xs text-muted-foreground">آخر سعر وحدة: <strong className="text-[#124c69]">{money(stockCostQuery.data.unitPrice)}</strong> — مذكرة {stockCostQuery.data.memoNumber} ({new Date(stockCostQuery.data.memoDate).toLocaleDateString("ar-SY")})</p>
+                {estimatedPurchaseCost !== null ? <p className="mt-2 text-lg font-extrabold text-[#07518e]">التكلفة التقديرية: {money(estimatedPurchaseCost)}</p> : <p className="mt-2 text-xs text-muted-foreground">أدخل كمية أكبر من صفر لعرض التكلفة الإجمالية.</p>}
+              </>}
+            </div>
+          </div>
+        </div>
+        <p className="text-xs leading-6 text-muted-foreground">يعرض الرصيد الحالي المسجل للمادة في المستودع المختار   .</p>
+      </CardContent>
+    </Card>
     {query.isLoading && <Card className="bg-white/85"><CardContent className="p-10 text-center text-sm text-muted-foreground">جار تحميل الإحصائيات…</CardContent></Card>}
     {query.isError && <Card className="border-red-200 bg-red-50"><CardContent className="p-6 text-center text-sm text-red-700">تعذر تحميل الإحصائيات. تحقق من اتصال قاعدة البيانات ثم أعد المحاولة.</CardContent></Card>}
     {data && <div className="grid gap-5 xl:grid-cols-2">

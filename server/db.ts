@@ -2172,6 +2172,82 @@ export async function listInventoryBalancePage(options?: {
   return { rows, hasMore: offset + rows.length < total, total };
 }
 
+export async function getMaterialWarehouseBalance(input: {
+  materialId: number;
+  warehouseId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const [[material], [warehouse], [balance]] = await Promise.all([
+    db
+      .select({
+        id: materials.id,
+        code: materials.code,
+        name: materials.name,
+        unit: materials.unit,
+      })
+      .from(materials)
+      .where(eq(materials.id, input.materialId))
+      .limit(1),
+    db
+      .select({ id: warehouses.id, name: warehouses.name })
+      .from(warehouses)
+      .where(eq(warehouses.id, input.warehouseId))
+      .limit(1),
+    db
+      .select({
+        quantity: sql<string>`coalesce(sum(${inventoryBalances.onHandQuantity}), 0)`,
+      })
+      .from(inventoryBalances)
+      .where(
+        and(
+          eq(inventoryBalances.materialId, input.materialId),
+          eq(inventoryBalances.warehouseId, input.warehouseId)
+        )
+      ),
+  ]);
+  if (!material || !warehouse) return null;
+  return {
+    materialId: material.id,
+    materialCode: material.code,
+    materialName: material.name,
+    unit: material.unit,
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.name,
+    quantity: String(balance?.quantity ?? "0"),
+  };
+}
+
+export async function getMaterialWarehouseCostEstimate(input: {
+  materialId: number;
+  warehouseId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const [latestPurchase] = await db
+    .select({
+      unitPrice: memoItems.unitPrice,
+      memoNumber: memos.memoNumber,
+      memoDate: memos.memoDate,
+    })
+    .from(memoItems)
+    .innerJoin(memos, eq(memoItems.memoId, memos.id))
+    .where(
+      and(
+        eq(memoItems.materialId, input.materialId),
+        eq(memos.warehouseId, input.warehouseId),
+        eq(memos.type, "inbound"),
+        eq(memos.status, "approved"),
+        gt(memos.id, 0),
+        sql`${memoItems.unitPrice} IS NOT NULL`,
+        sql`(${memos.notes} IS NULL OR (${memos.notes} NOT LIKE '%إدخال مواد قديمة%' AND ${memos.notes} NOT LIKE '%إرجاع%' AND ${memos.notes} NOT LIKE '%مرتجع%'))`
+      )
+    )
+    .orderBy(desc(memos.memoDate), desc(memos.id), desc(memoItems.id))
+    .limit(1);
+  return latestPurchase ?? null;
+}
+
 export async function getMaterialCard(input: {
   materialId: number;
   warehouseId?: number;

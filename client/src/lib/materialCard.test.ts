@@ -21,4 +21,14 @@ describe("بطاقة المادة", () => {
     expect(rows[0]?.[2]).toBe("جديد");
     expect(rows[0]?.[6]).toBe(445);
   });
+
+  it("يعرض الاستلام قبل التسليم عند تنفيذ الحركتين في اليوم نفسه", () => {
+    const rows = buildMaterialCardRows([
+      { memoNumber: "تسليم-2", memoDate: "2026-04-12", occurredAt: "2026-04-12T08:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "7", partyName: "جهة", notes: null },
+      { memoNumber: "استلام-1", memoDate: "2026-04-12", occurredAt: "2026-04-12T17:00:00", movementType: "inbound", quantityIn: "10", quantityOut: "0", partyName: "مورد", notes: null },
+    ], "0");
+
+    expect(rows.map(row => row[2])).toEqual(["استلام-1", "تسليم-2"]);
+    expect(rows.map(row => row[6])).toEqual([10, 3]);
+  });
 });

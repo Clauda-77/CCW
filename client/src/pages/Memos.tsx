@@ -229,6 +229,7 @@ import { trpc } from "@/lib/trpc";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ArchiveRestore,
   CheckCircle2,
   ClipboardCheck,
   FilePlus2,
@@ -302,6 +303,7 @@ export default function MemosPage({
   const [, setLocation] = useLocation();
   const isDevelopment = import.meta.env.DEV;
   const [open, setOpen] = useState(false);
+  const [coordinationOpen, setCoordinationOpen] = useState(false);
   const [pickerLine, setPickerLine] = useState<number | null>(null);
   const [quickMaterialOpen, setQuickMaterialOpen] = useState(false);
   const [pendingMaterialName, setPendingMaterialName] = useState<string | null>(
@@ -313,6 +315,7 @@ export default function MemosPage({
   const [memoFinancialSearch, setMemoFinancialSearch] = useState("");
   const [memoSerialSearch, setMemoSerialSearch] = useState("");
   const [printTargetId, setPrintTargetId] = useState<number | null>(null);
+  const [printTargetNumber, setPrintTargetNumber] = useState<string | null>(null);
   const [printWindow, setPrintWindow] = useState<Window | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: number;
@@ -353,6 +356,10 @@ export default function MemosPage({
     { type: kind },
     { enabled: isAuthenticated }
   );
+  const coordinationIncoming = trpc.finance.coordinationIncoming.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
   const preview = trpc.memos.previewList.useQuery(
     { type: kind },
     { enabled: usePreview }
@@ -387,14 +394,14 @@ export default function MemosPage({
   const printLive = trpc.memos.details.useQuery(
     { id: printTargetId ?? 1 },
     {
-      enabled: Boolean(printTargetId) && isAuthenticated,
+      enabled: printTargetId !== null && isAuthenticated,
       refetchOnMount: "always",
     }
   );
   const printPreview = trpc.memos.previewDetails.useQuery(
     { id: printTargetId ?? 1 },
     {
-      enabled: Boolean(printTargetId) && usePreview,
+      enabled: printTargetId !== null && usePreview,
       refetchOnMount: "always",
     }
   );
@@ -646,12 +653,13 @@ export default function MemosPage({
     openQuickMaterial();
   };
   useEffect(() => {
-    if (!printTargetId || !printWindow) return;
+    if (printTargetId === null || !printWindow) return;
     if (printQuery.isError) {
       toast.error(printQuery.error.message || "تعذر تحميل المذكرة للطباعة.");
       printWindow.close();
       setPrintWindow(null);
       setPrintTargetId(null);
+      setPrintTargetNumber(null);
       return;
     }
     if (!printQuery.data) return;
@@ -659,6 +667,7 @@ export default function MemosPage({
       toast.error("تعذر تجهيز نموذج الطباعة. أعد المحاولة.");
     setPrintWindow(null);
     setPrintTargetId(null);
+    setPrintTargetNumber(null);
   }, [
     printQuery.data,
     printQuery.error,
@@ -666,7 +675,11 @@ export default function MemosPage({
     printTargetId,
     printWindow,
   ]);
-  const startMemoPrint = (id: number) => {
+  const startMemoPrint = (id: number, memoNumber: string) => {
+    if (!Number.isInteger(id) || id < 0 || !memoNumber.trim()) {
+      toast.error("لا يمكن معاينة هذه المذكرة لأن رقمها غير صالح.");
+      return;
+    }
     const page = openPrintWindow("مذكرة رسمية");
     if (!page) {
       toast.error(
@@ -676,6 +689,7 @@ export default function MemosPage({
     }
     setPrintWindow(page);
     setPrintTargetId(id);
+    setPrintTargetNumber(memoNumber);
   };
   const draftClassification: MemoClassification = inbound
     ? inboundEntry
@@ -1262,11 +1276,26 @@ export default function MemosPage({
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {transferMode
-              ? "إدخال محضر تركيب وتنسيق ومواده وفق النموذج التشغيلي القديم."
+              ? "يُخرج المواد الجديدة من المستودع الحالي، ويُدخل المواد القديمة المفكوكة تلقائياً إلى مستودع المنسقات."
               : "إدخال المذكرة وموادها ومراجع الفاتورة والطلب وفق النموذج التشغيلي."}
           </p>
         </div>
-        {canCreate && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Dialog open={coordinationOpen} onOpenChange={setCoordinationOpen}>
+            <DialogTrigger asChild>
+              <Button type="button" variant="outline" className="rounded-xl border-[#17698a] text-[#17698a]">
+                <ArchiveRestore className="ml-2 h-4 w-4" />
+                استيراد محاضر التنسيق
+              </Button>
+            </DialogTrigger>
+            <DialogContent dir="rtl" className="max-w-5xl border-[#86cef0]">
+              <DialogHeader><DialogTitle className="text-right text-xl text-[#07518e]">محاضر التنسيق الواردة</DialogTitle><DialogDescription className="text-right">المحاضر التي خرجت من مستودعك ووصلت كإدخال إلى مستودع المنسقات.</DialogDescription></DialogHeader>
+              <div className="max-h-[65vh] overflow-auto rounded-xl border border-[#bce2f3]">
+                <table className="w-full min-w-[760px] text-right text-sm"><thead className="bg-[#eaf8fe] text-xs text-[#17638d]"><tr><th className="px-3 py-3">رقم الإدخال</th><th className="px-3 py-3">محضر المصدر</th><th className="px-3 py-3">مستودع المصدر</th><th className="px-3 py-3">التاريخ</th><th className="px-3 py-3">الحالة</th><th className="px-3 py-3">النوع</th></tr></thead><tbody>{coordinationIncoming.isLoading && <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">جار تحميل محاضر التنسيق…</td></tr>}{!coordinationIncoming.isLoading && (coordinationIncoming.data ?? []).length === 0 && <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">لا توجد محاضر تنسيق واردة إلى مستودع المنسقات.</td></tr>}{(coordinationIncoming.data ?? []).map(row => <tr key={row.id} className="border-t border-[#d9eff9]"><td className="px-3 py-3 font-bold text-[#07518e]">{row.memoNumber}</td><td className="px-3 py-3">{row.source?.memoNumber ?? "—"}</td><td className="px-3 py-3">{row.source?.warehouseName ?? "—"}</td><td className="px-3 py-3">{new Date(row.memoDate).toLocaleDateString("ar")}</td><td className="px-3 py-3">{row.status === "approved" ? "معتمد" : "بانتظار الاعتماد"}</td><td className="px-3 py-3 font-bold text-[#17698a]">إدخال إلى مستودع المنسقات</td></tr>)}</tbody></table>
+              </div>
+            </DialogContent>
+          </Dialog>
+          {canCreate && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button
@@ -1649,7 +1678,8 @@ export default function MemosPage({
               </form>
             </DialogContent>
           </Dialog>
-        )}
+          )}
+        </div>
       </section>
       <Dialog
         open={pickerLine !== null}
@@ -1810,7 +1840,7 @@ export default function MemosPage({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setLocation(`/memos/${memo.id}`)}
+                          onClick={() => setLocation(`/memos/by-number/${encodeURIComponent(memo.memoNumber)}`)}
                         >
                           <ClipboardCheck className="ml-1 h-3.5 w-3.5 text-[#17698a]" />
                           التفاصيل والمطابقة
@@ -1834,11 +1864,11 @@ export default function MemosPage({
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={printTargetId === memo.id}
-                          onClick={() => startMemoPrint(memo.id)}
+                          disabled={printTargetNumber === memo.memoNumber}
+                          onClick={() => startMemoPrint(memo.id, memo.memoNumber)}
                         >
                           <FileText className="ml-1 h-3.5 w-3.5" />
-                          {printTargetId === memo.id
+                          {printTargetNumber === memo.memoNumber
                             ? "جار التجهيز…"
                             : "معاينة"}
                         </Button>

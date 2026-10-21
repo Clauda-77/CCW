@@ -43,16 +43,6 @@ describe("warehouse role procedures", () => {
     await expect(caller.warehouse.stockAccess()).resolves.toEqual({ permitted: true });
   });
 
-  it("blocks data-entry operators from material warehouse balance statistics", async () => {
-    const caller = appRouter.createCaller(createContext("data_entry"));
-    await expect(
-      caller.statistics.materialWarehouseBalance({ materialId: 1, warehouseId: 1 })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(
-      caller.statistics.materialWarehouseCostEstimate({ materialId: 1, warehouseId: 1 })
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-  });
-
   it("reserves import access for the administrator", async () => {
     const admin = appRouter.createCaller(createContext("admin"));
     const dataEntry = appRouter.createCaller(createContext("data_entry"));

@@ -1048,8 +1048,6 @@ function buildReportRows(
         "",
         "",
         "",
-        "",
-        "",
       ];
     return [
       serial,

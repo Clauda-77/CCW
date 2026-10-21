@@ -22,19 +22,7 @@ export function buildMaterialCardRows(movements: MaterialCardMovement[], opening
   let balance = Number(openingQuantity || 0);
   const from = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const to = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
-  const movementPriority = (movement: MaterialCardMovement) => {
-    if (movement.movementType === "opening") return 0;
-    if (movement.movementType === "inbound" || movement.movementType === "transfer_in") return 1;
-    if (movement.movementType === "adjustment") return 2;
-    return 3;
-  };
-  const sorted = [...movements].sort((left, right) => {
-    const leftTime = new Date(left.occurredAt).getTime();
-    const rightTime = new Date(right.occurredAt).getTime();
-    const leftDay = new Date(leftTime).setHours(0, 0, 0, 0);
-    const rightDay = new Date(rightTime).setHours(0, 0, 0, 0);
-    return leftDay - rightDay || movementPriority(left) - movementPriority(right) || leftTime - rightTime;
-  });
+  const sorted = [...movements].sort((left, right) => new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime());
   const rows: Array<Array<string | number | null>> = [];
   for (const movement of sorted) {
     const quantityIn = Number(movement.quantityIn || 0);

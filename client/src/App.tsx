@@ -22,7 +22,7 @@ import UsersPage from "./pages/Users";
 import StatisticsPage from "./pages/Statistics";
 import WarehousesPage from "./pages/Warehouses";
 
-const withShell = (Page: React.ComponentType) => () => <DashboardLayout preview={import.meta.env.DEV}><Page /></DashboardLayout>;
+const withShell = (Page: React.ComponentType) => () => <DashboardLayout><Page /></DashboardLayout>;
 const Preview = () => <DashboardLayout preview><Home /></DashboardLayout>;
 
 function Router() {
@@ -41,6 +41,7 @@ function Router() {
       <Route path={"/entry"} component={withShell(() => <MemosPage kind="inbound" inboundMode="entry" />)} />
       <Route path={"/outbound"} component={withShell(() => <MemosPage kind="outbound" />)} />
       <Route path={"/transfer"} component={withShell(() => <MemosPage kind="outbound" mode="transfer" />)} />
+      <Route path={"/memos/by-number/:number"} component={withShell(() => <MemoDetailsPage byNumber />)} />
       <Route path={"/memos/:id"} component={withShell(MemoDetailsPage)} />
       <Route path={"/inventory"} component={withShell(InventoryPage)} />
       <Route path={"/reports"} component={withShell(() => <InventoryPage reportsOnly />)} />

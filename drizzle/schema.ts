@@ -95,6 +95,7 @@ export const memos = mysqlTable("memos", {
   memoNumber: varchar("memoNumber", { length: 64 }).notNull(),
   status: mysqlEnum("status", ["draft", "pending_review", "approved", "rejected", "cancelled"]).default("draft").notNull(),
   warehouseId: int("warehouseId").notNull().references(() => warehouses.id),
+  relatedMemoId: int("relatedMemoId"),
   partyId: int("partyId").references(() => parties.id),
   folderNumber: varchar("folderNumber", { length: 64 }),
   orderNumber: varchar("orderNumber", { length: 128 }),
@@ -118,6 +119,7 @@ export const memos = mysqlTable("memos", {
   index("memos_status_idx").on(table.status),
   index("memos_date_idx").on(table.memoDate),
   index("memos_party_idx").on(table.partyId),
+  index("memos_related_idx").on(table.relatedMemoId),
 ]);
 
 export const memoItems = mysqlTable("memoItems", {

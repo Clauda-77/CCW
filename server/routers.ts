@@ -595,8 +595,6 @@ const withRoles = (...roles: WarehouseRole[]) =>
     return next();
   });
 
-const memoIdSchema = z.number().int().min(0);
-
 export const warehouseKeeperProcedure = withRoles("warehouse_keeper", "reviewer", "admin");
 export const dataEntryProcedure = withRoles(
   "data_entry",
@@ -1062,16 +1060,23 @@ export const appRouter = router({
         });
       }),
     details: protectedProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().nonnegative() }))
       .query(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.id);
+        await assertWarehouseAccess(ctx.user, memo.warehouseId);
+        return memo;
+      }),
+    detailsByNumber: protectedProcedure
+      .input(z.object({ memoNumber: z.string().trim().min(1).max(64) }))
+      .query(async ({ ctx, input }) => {
+        const memo = await warehouseDb.getMemoDetailsByNumber(input.memoNumber);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
         return memo;
       }),
     update: dataEntryProcedure
       .input(
         z.object({
-          id: memoIdSchema,
+          id: z.number().int().positive(),
           classification: z.enum([
             "purchase",
             "adjustment",
@@ -1108,35 +1113,42 @@ export const appRouter = router({
         return warehouseDb.updateMemo({ ...input, updatedBy: ctx.user.id });
       }),
     previewDetails: publicProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().nonnegative() }))
       .query(({ input }) => {
         if (process.env.NODE_ENV === "production")
           throw new TRPCError({ code: "FORBIDDEN" });
         return warehouseDb.getMemoDetails(input.id);
       }),
+    previewDetailsByNumber: publicProcedure
+      .input(z.object({ memoNumber: z.string().trim().min(1).max(64) }))
+      .query(({ input }) => {
+        if (process.env.NODE_ENV === "production")
+          throw new TRPCError({ code: "FORBIDDEN" });
+        return warehouseDb.getMemoDetailsByNumber(input.memoNumber);
+      }),
     review: reviewerProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().nonnegative() }))
       .mutation(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.id);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
         return warehouseDb.reviewMemo(input.id, ctx.user.id);
       }),
     approve: reviewerProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().nonnegative() }))
       .mutation(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.id);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
         return warehouseDb.approveMemo(input.id, ctx.user.id);
       }),
     cancel: administratorProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.id);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
         return warehouseDb.cancelMemo(input.id, ctx.user.id);
       }),
     delete: administratorProcedure
-      .input(z.object({ id: memoIdSchema }))
+      .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.id);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
@@ -1151,6 +1163,10 @@ export const appRouter = router({
     reconciliationSummary: protectedProcedure.query(async ({ ctx }) => {
       const allowed = await getAccessibleWarehouseIds(ctx.user);
       return warehouseDb.listFinanceReconciliationSummary(allowed);
+    }),
+    coordinationIncoming: protectedProcedure.query(async ({ ctx }) => {
+      const allowed = await getAccessibleWarehouseIds(ctx.user);
+      return warehouseDb.listCoordinationIncoming(allowed);
     }),
     reconcileAll: reviewerProcedure.mutation(async ({ ctx }) => {
       const allowed = await getAccessibleWarehouseIds(ctx.user);
@@ -1181,14 +1197,14 @@ export const appRouter = router({
         commitFinancialWorkbook({ ...input, createdBy: ctx.user.id })
       ),
     reconciliation: protectedProcedure
-      .input(z.object({ memoId: memoIdSchema }))
+      .input(z.object({ memoId: z.number().int().nonnegative() }))
       .query(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.memoId);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
         return warehouseDb.getMemoReconciliation(input.memoId);
       }),
     reconcile: reviewerProcedure
-      .input(z.object({ memoId: memoIdSchema }))
+      .input(z.object({ memoId: z.number().int().nonnegative() }))
       .mutation(async ({ ctx, input }) => {
         const memo = await warehouseDb.getMemoDetails(input.memoId);
         await assertWarehouseAccess(ctx.user, memo.warehouseId);
@@ -1234,64 +1250,6 @@ export const appRouter = router({
       .query(({ input }) =>
         warehouseDb.getDeliveredQuantityStatistics(input ?? {})
       ),
-    materialWarehouseBalance: warehouseKeeperProcedure
-      .input(
-        z.object({
-          materialId: z.number().int().positive(),
-          warehouseId: z.number().int().positive(),
-        })
-      )
-      .query(async ({ ctx, input }) => {
-        await assertWarehouseAccess(ctx.user, input.warehouseId);
-        const result = await warehouseDb.getMaterialWarehouseBalance(input);
-        if (!result)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "المادة أو المستودع المحدد غير موجود.",
-          });
-        return result;
-      }),
-    previewMaterialWarehouseBalance: publicProcedure
-      .input(
-        z.object({
-          materialId: z.number().int().positive(),
-          warehouseId: z.number().int().positive(),
-        })
-      )
-      .query(async ({ input }) => {
-        if (process.env.NODE_ENV === "production")
-          throw new TRPCError({ code: "FORBIDDEN" });
-        const result = await warehouseDb.getMaterialWarehouseBalance(input);
-        if (!result)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "المادة أو المستودع المحدد غير موجود.",
-          });
-        return result;
-      }),
-    materialWarehouseCostEstimate: warehouseKeeperProcedure
-      .input(
-        z.object({
-          materialId: z.number().int().positive(),
-          warehouseId: z.number().int().positive(),
-        })
-      )
-      .query(async ({ ctx, input }) => {
-        await assertWarehouseAccess(ctx.user, input.warehouseId);
-        return warehouseDb.getMaterialWarehouseCostEstimate(input);
-      }),
-    previewMaterialWarehouseCostEstimate: publicProcedure
-      .input(
-        z.object({
-          materialId: z.number().int().positive(),
-          warehouseId: z.number().int().positive(),
-        })
-      )
-      .query(({ input }) => {
-        if (process.env.NODE_ENV === "production")
-          throw new TRPCError({ code: "FORBIDDEN" });
-        return warehouseDb.getMaterialWarehouseCostEstimate(input);
-      }),
     previewDeliveredQuantity: publicProcedure
       .input(
         z

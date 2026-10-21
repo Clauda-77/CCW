@@ -178,7 +178,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
   preview?: boolean;
 }) {
-  const { loading, user, logout } = useAuth();
+  const { loading, user, logout } = useAuth({
+    redirectOnUnauthenticated: !preview,
+    redirectPath: "/login",
+  });
   const [location, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   if (loading && !preview) return <DashboardLayoutSkeleton />;

@@ -88,6 +88,14 @@ export function buildMemoPrintHtml(memo: PrintableMemo) {
       : "فقد جرى تسليمها";
   const recipientLabel = isTransfer ? "الجهة المستفيدة" : "الاسم";
   const memoDate = dateValue(memo.memoDate);
+  const transferMemoDate = memoDate || " /   /   202 ";
+  const transferInvoiceDate = dateValue(memo.invoiceDate) || " /    /   202 ";
+  const transferInvoiceNumber = memo.invoiceNumber?.trim()
+    ? escapeHtml(memo.invoiceNumber)
+    : "    ";
+  const transferPartyName = memo.partyName?.trim()
+    ? escapeHtml(memo.partyName)
+    : "        ";
   // const orderDate = dateValue(memo.orderDate);
 
   // const renderRows = (items: MemoPrintItem[], offset: number) => items.map((item, index) => {
@@ -184,7 +192,7 @@ export function buildMemoPrintHtml(memo: PrintableMemo) {
             )
           )
         : "";
-      return `<tr><td>${serial}</td><td class="transfer-material-name">${name}</td><td>${code}</td><td>${description}</td><td>${unit}</td><td>${quantity}</td><td>${notes}</td>${renderPriceGridCell(total, 8)}${renderPriceGridCell(price, 6)}<td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      return `<tr><td>${serial}</td><td class="transfer-material-name">${name}</td><td>${code}</td><td>${description}</td><td>${unit}</td><td>${quantity}</td><td>${notes}</td>${renderPriceGridCell(price, 6)}${renderPriceGridCell(total, 8)}<td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
     }).join("");
     //<colgroup><col style="width:4%"/><col style="width:13%"/><col style="width:7%"/><col style="width:13%"/><col style="width:6%"/><col style="width:6%"/><col style="width:7%"/><col style="width:8%"/><col style="width:8%"/><col style="width:4%"/><col style="width:12%"/><col style="width:12%"/><col style="width:6%"/><col style="width:6%"/><col style="width:7%"/></colgroup>
 
@@ -207,7 +215,7 @@ export function buildMemoPrintHtml(memo: PrintableMemo) {
   <col style="width:7%"/>
 </colgroup>
 
-    <thead><tr><th colspan="6">المواد المركبة</th><th rowspan="2">ملاحظات</th><th rowspan="2">القيمة<br/>الإجمالية<br/>ل.س</th><th rowspan="2">السعر<br/>الإفرادي<br/>ل.س</th><th colspan="5">المواد المنسقة</th><th rowspan="2">ملاحظات</th></tr><tr><th>الرقم<br/>المتسلسل</th><th>اسم المادة</th><th>رمزها</th><th>مواصفاتها</th><th>الوحدة</th><th>الكمية</th><th>الرقم<br/>المتسلسل</th><th>اسم المادة</th><th>مواصفاتها</th><th>الوحدة</th><th>الكمية</th></tr></thead><tbody>${rows}</tbody></table>`;
+    <thead><tr><th colspan="6">المواد المركبة</th><th rowspan="2">ملاحظات</th><th rowspan="2">السعر<br/>الإفرادي<br/>ل.س</th><th rowspan="2">القيمة<br/>الإجمالية<br/>ل.س</th><th colspan="5">المواد المنسقة</th><th rowspan="2">ملاحظات</th></tr><tr><th>الرقم<br/>المتسلسل</th><th>اسم المادة</th><th>رمزها</th><th>مواصفاتها</th><th>الوحدة</th><th>الكمية</th><th>الرقم<br/>المتسلسل</th><th>اسم المادة</th><th>مواصفاتها</th><th>الوحدة</th><th>الكمية</th></tr></thead><tbody>${rows}</tbody></table>`;
   };
 
   const renderPurchaseRows = (items: MemoPrintItem[], offset: number) =>
@@ -241,10 +249,10 @@ export function buildMemoPrintHtml(memo: PrintableMemo) {
   };
 
   const renderHeader = () =>
-    `<header class="memo-header"><section class="government"><div class="government-lines">الجمهورية العربية السورية<span>وزارة المالية</span></div></section><section class="memo-title"><h1>${title}</h1><p>مركز الحاسب</p></section><section class="memo-meta"><p>نموذج مستودع رقم ( ٦ )</p><p>رقم المجلد&nbsp;&nbsp;${escapeHtml(memo.folderNumber)}</p><p>رقم المحضر&nbsp;&nbsp;${escapeHtml(memo.memoNumber)}</p><p>التاريخ&nbsp;&nbsp;${escapeHtml(memoDate)}</p></section></header>`;
+    `<header class="memo-header" ${isTransfer || inbound ? `style="position:relative;min-height:${inbound ? "36mm" : "26mm"}"` : ""}><section class="government"><div class="government-lines">الجمهورية العربية السورية<span>وزارة المالية</span></div></section><section class="memo-title"><h1>${title}</h1>${isTransfer ? "" : "<p>مركز الحاسب</p>"}</section><section class="memo-meta" ${isTransfer || inbound ? 'style="position:absolute;left:0;top:0;width:48mm;text-align:right;direction:rtl"' : ""}>${isTransfer ? `<p>نموذج مستودع رقم ( ٤ )</p><p style="display:flex;align-items:baseline;gap:2ch;white-space:nowrap"><span>رقم المجلد</span><span>${escapeHtml(memo.folderNumber)}</span></p><p style="display:flex;align-items:baseline;gap:2ch;white-space:nowrap"><span>رقم المتسلسل</span><span>${escapeHtml(memo.memoNumber)}</span></p>` : inbound ? `<p>نموذج مستودع رقم ( ٦ )</p><p style="display:flex;align-items:baseline;gap:2ch;white-space:nowrap"><span>رقم المجلد</span><span>${escapeHtml(memo.folderNumber)}</span></p><p style="display:flex;align-items:baseline;gap:2ch;white-space:nowrap"><span>رقم المحضر</span><span>${escapeHtml(memo.memoNumber)}</span></p><p style="display:flex;align-items:baseline;gap:2ch;white-space:nowrap"><span>التاريخ</span><span>${escapeHtml(memoDate)}</span></p>` : `<p>نموذج مستودع رقم ( ٦ )</p><p>رقم المجلد&nbsp;&nbsp;${escapeHtml(memo.folderNumber)}</p><p>رقم المحضر&nbsp;&nbsp;${escapeHtml(memo.memoNumber)}</p><p>التاريخ&nbsp;&nbsp;${escapeHtml(memoDate)}</p>`}</section></header>`;
   const renderFooter = () =>
     isTransfer
-      ? `<footer class="memo-footer transfer-footer"><p>تم استلام القطع المنسقة والمبينة أعلاه وسجلت في بطاقتها.</p><section class="transfer-signatures"><div><strong>القائم بالعمل</strong><p>الاسم :</p><p>التوقيع :</p></div><div><strong>المسؤول عن الآلية التي تم إصلاحها أو صيانتها</strong><p>الاسم :</p><p>التوقيع :</p></div><div><strong>أمين المستودع</strong><p>الاسم :</p><p>التوقيع :</p></div><div><strong>مصدق المدير المختص</strong><p>الاسم :</p><p>التوقيع :</p></div></section></footer>`
+      ? `<footer class="memo-footer transfer-footer"><section class="transfer-signatures" style="display:flex;flex-direction:column;gap:5mm;margin-top:10mm"><div class="transfer-signature-row transfer-top-row" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12mm"><div style="min-height:25mm;text-align:right"><strong>القائم بالعمل</strong><p>الاسم :</p><p>التوقيع :</p></div><div style="min-height:25mm;text-align:right"><strong>المسؤول عن المادة التي تم إصلاحها أو صيانتها</strong><p>الاسم :</p><p>التوقيع :</p></div><div style="min-height:25mm;text-align:right"><strong>رئيس اللوازم</strong><p>الاسم :</p><p>التوقيع :</p></div></div><p class="transfer-receipt" style="margin:0;text-align:center;font-weight:700;transform:translateX(4mm)">تم استلام القطع المنسقة والمبينة أعلاه وسجلت في بطاقتها.</p><div class="transfer-signature-row transfer-bottom-row" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12mm"><div style="min-height:25mm;text-align:right"><strong>أمين المستودع</strong><p>الاسم :</p><p>التوقيع :</p></div><div style="min-height:25mm;text-align:right"><strong>مصدق المدير المختص</strong><p>الاسم :</p><p>التوقيع :</p></div></div></section></footer>`
       : `<footer class="memo-footer"><div class="total-line"><strong>قيمة مجموعها :</strong><span>${showPrices ? escapeHtml(formatPrintNumber(memo.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0) || "")) : ""}</span></div><p>${footerAction} :</p><p>تم تسجيل المواد المبينة أعلاه في بطاقات المستودع أصولاً</p><p>وتم تسجيلها في بطاقات المستودع أصولاً</p><section class="signature-area"><div class="storekeeper"><p>أمين المستودع</p><p>الاسم :</p><p>التوقيع :</p></div><div class="recipient"><p>${recipientLabel} :</p><p>الاسم :</p><p>الوظيفة :</p><p>التوقيع :</p></div></section></footer>`;
 
   const pageItems = Array.from(
@@ -257,7 +265,7 @@ export function buildMemoPrintHtml(memo: PrintableMemo) {
       const isLast = pageIndex === pageItems.length - 1;
       const intro = isFirst
         ? isTransfer
-          ? `<p class="memo-intro transfer-intro">بتاريخ&nbsp;&nbsp;${escapeHtml(memoDate)}&nbsp;&nbsp;تم تركيب المواد المبينة أدناه بموجب الفاتورة رقم&nbsp;&nbsp;${escapeHtml(memo.invoiceNumber || memo.referenceNumber || memo.memoNumber)}، وسلمت القطع التنفيذية المنسقة إلى أمين مستودع الجهة المستفيدة.</p><p class="memo-reference">نوع العملية&nbsp;&nbsp;تركيب وتنسيق&nbsp;&nbsp;&nbsp;&nbsp;رقم الآلية أو المعدة&nbsp;&nbsp;${escapeHtml(memo.orderNumber || memo.folderNumber)}</p>`
+          ? `<p class="memo-intro transfer-intro" style="text-align:center;direction:rtl;white-space:pre-wrap">بتاريخ ${escapeHtml(transferMemoDate)} تم تركيب المواد المبينة فيما يلي والواردة بموجب الفاتورة رقم ( ${transferInvoiceNumber} ) تاريخ ${escapeHtml(transferInvoiceDate)} من ${transferPartyName} وركبت على المادة رقم             نوع        والعائدة           وسلمت القطع التبديلية المنسقة إلى أمين مستودع المواد التالفة كما يلي:</p>`
           : `<p class="memo-intro">إن المواد المذكورة أدناه ${partyPhrase}&nbsp;&nbsp;${escapeHtml(memo.partyName)}</p><p class="memo-reference">بموجب ${referenceLabel}&nbsp;&nbsp;${escapeHtml(memo.referenceNumber || memo.memoNumber)}&nbsp;&nbsp;تاريخ&nbsp;&nbsp;${escapeHtml(memoDate)}<br/>وبموجب رقم الطلب&nbsp;&nbsp;${escapeHtml(memo.orderNumber)}&nbsp;&nbsp;تاريخ&nbsp;&nbsp;${escapeHtml(orderDate)}</p>`
         : "";
       return `<main class="memo-sheet ${isFirst ? "memo-first-page" : "memo-continuation-page"}">${renderHeader()}${intro}${renderTable(items, pageIndex * 11)}${isLast ? renderFooter() : ""}</main>`;

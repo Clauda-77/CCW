@@ -7157,20 +7157,17 @@ export const appRouter = router({
         return warehouseDb.getDeliveredQuantityStatistics(input ?? {});
       }),
     materialWarehouseBalance: warehouseKeeperProcedure
-      .input(z.object({ materialId: z.number().int().positive(), warehouseId: z.number().int().positive() }))
+      .input(z.object({ materialId: z.number().int().positive().optional(), warehouseId: z.number().int().positive().optional() }))
       .query(async ({ ctx, input }) => {
-        await assertWarehouseAccess(ctx.user, input.warehouseId);
-        const result = await warehouseDb.getMaterialWarehouseBalance(input);
-        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "المادة أو المستودع المحدد غير موجود." });
-        return result;
+        if (input.warehouseId) await assertWarehouseAccess(ctx.user, input.warehouseId);
+        const allowed = await getAccessibleWarehouseIds(ctx.user);
+        return warehouseDb.getMaterialWarehouseBalance({ ...input, allowedWarehouseIds: allowed });
       }),
     previewMaterialWarehouseBalance: publicProcedure
-      .input(z.object({ materialId: z.number().int().positive(), warehouseId: z.number().int().positive() }))
+      .input(z.object({ materialId: z.number().int().positive().optional(), warehouseId: z.number().int().positive().optional() }))
       .query(async ({ input }) => {
         if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN" });
-        const result = await warehouseDb.getMaterialWarehouseBalance(input);
-        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "المادة أو المستودع المحدد غير موجود." });
-        return result;
+        return warehouseDb.getMaterialWarehouseBalance(input);
       }),
     materialWarehouseCostEstimate: warehouseKeeperProcedure
       .input(z.object({ materialId: z.number().int().positive(), warehouseId: z.number().int().positive() }))

@@ -836,6 +836,7 @@ export const appRouter = router({
       .input(
         z.object({
           materialId: z.number().int().positive(),
+          materialIds: z.array(z.number().int().positive()).max(1000).optional(),
           warehouseId: z.number().int().positive().optional(),
           partyId: z.number().int().positive().nullable().optional(),
         })
@@ -849,6 +850,7 @@ export const appRouter = router({
       .input(
         z.object({
           materialId: z.number().int().positive(),
+          materialIds: z.array(z.number().int().positive()).max(1000).optional(),
           warehouseId: z.number().int().positive().optional(),
           partyId: z.number().int().positive().nullable().optional(),
         })

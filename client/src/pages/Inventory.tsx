@@ -1970,6 +1970,7 @@ type InventoryRow = {
   outboundQuantity: string;
   warehouseName: string;
   partyName: string | null;
+  materialIds: number[];
 };
 type ReportSession = {
   id: string;
@@ -2104,6 +2105,7 @@ export default function InventoryPage({
   );
   const [cardTarget, setCardTarget] = useState<{
     materialId: number;
+    materialIds?: number[];
     warehouseId?: number;
     partyId?: number | null;
   } | null>(null);
@@ -2447,6 +2449,7 @@ export default function InventoryPage({
       setCardPrintMode(mode === "cardRange" ? "range" : "all");
       setCardTarget({
         materialId: selectedBalance.materialId,
+        materialIds: selectedBalance.materialIds,
         warehouseId: selectedBalance.warehouseId > 0 ? selectedBalance.warehouseId : undefined,
         partyId: selectedBalance.partyId,
       });

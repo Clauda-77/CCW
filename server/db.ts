@@ -2598,6 +2598,10 @@ import {
   userWarehouses,
   warehouses,
 } from "../drizzle/schema";
+import {
+  groupMaterialsByCode,
+  mergeInventoryRowsByMaterialCode,
+} from "./materialIdentity";
 import { ENV } from "./_core/env";
 import { assertRoleChangeAllowed } from "./userRoles";
 
@@ -3260,39 +3264,43 @@ export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
     minimumStock: materials.minimumStock,
     isActive: materials.isActive,
   };
-  const query = search.trim();
-  const condition = query
-    ? or(
-        like(materials.code, `%${query}%`),
-        like(materials.name, `%${query}%`),
-        like(materials.barcode, `%${query}%`)
-      )
-    : undefined;
+  const query = search.trim().toLocaleLowerCase("en-US");
   const safePage = Math.max(1, Math.floor(page));
   const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
-
-  const [totalRows, materialRows] = await Promise.all([
-    db.select({ value: count() }).from(materials).where(condition),
-    db
-      .select(columns)
-      .from(materials)
-      .where(condition)
-      .orderBy(materials.id)
-      .limit(safePageSize)
-      .offset((safePage - 1) * safePageSize),
-  ]);
-  const total = totalRows[0]?.value ?? 0;
+  // Collapse legacy duplicate definitions before paging so a duplicate code
+  // cannot appear on two different pages or inflate the result count.
+  const materialRows = await db
+    .select(columns)
+    .from(materials)
+    .orderBy(materials.id);
+  const materialMatchesSearch = (material: (typeof materialRows)[number]) =>
+    [material.code, material.name, material.barcode].some(value =>
+      String(value ?? "")
+        .toLocaleLowerCase("en-US")
+        .includes(query)
+    );
+  const materialGroups = groupMaterialsByCode(materialRows).filter(
+    group => !query || group.rows.some(materialMatchesSearch)
+  );
+  const total = materialGroups.length;
   const totalPages = Math.ceil(total / safePageSize);
-  if (!materialRows.length)
+  const pageGroups = materialGroups.slice(
+    (safePage - 1) * safePageSize,
+    safePage * safePageSize
+  );
+  if (!pageGroups.length)
     return { items: [], total, page: safePage, pageSize: safePageSize, totalPages };
 
+  const pageMaterialIds = pageGroups.flatMap(group =>
+    group.rows.map(row => row.id)
+  );
   const balanceRows = await db
     .select({
       materialId: inventoryBalances.materialId,
       onHandQuantity: inventoryBalances.onHandQuantity,
     })
     .from(inventoryBalances)
-    .where(inArray(inventoryBalances.materialId, materialRows.map(row => row.id)));
+    .where(inArray(inventoryBalances.materialId, pageMaterialIds));
   const currentQuantities = new Map<number, number>();
   for (const balance of balanceRows) {
     currentQuantities.set(
@@ -3301,10 +3309,22 @@ export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
     );
   }
   return {
-    items: materialRows.map(material => ({
-      ...material,
-      currentQuantity: String(currentQuantities.get(material.id) ?? 0),
-    })),
+    items: pageGroups.map(group => {
+      const displayMaterial =
+        query && !materialMatchesSearch(group.canonical)
+          ? (group.rows.find(materialMatchesSearch) ?? group.canonical)
+          : group.canonical;
+      return {
+        ...displayMaterial,
+        currentQuantity: String(
+          group.rows.reduce(
+            (totalQuantity, material) =>
+              totalQuantity + (currentQuantities.get(material.id) ?? 0),
+            0
+          )
+        ),
+      };
+    }),
     total,
     page: safePage,
     pageSize: safePageSize,
@@ -4687,28 +4707,35 @@ export async function listInventoryBalances(options?: {
   const db = await getDb();
   if (!db) return [];
   const limit = options?.limit ?? 10_000;
-  const term = options?.search?.trim();
-  const materialSearch = term
-    ? or(
-        like(materials.code, `%${term}%`),
-        like(materials.name, `%${term}%`),
-        like(materials.barcode, `%${term}%`)
-      )
-    : undefined;
-  const pageMaterials = await db
+  const term = options?.search?.trim().toLocaleLowerCase("en-US");
+  const materialRows = await db
     .select({
       id: materials.id,
       code: materials.code,
       name: materials.name,
       description: materials.description,
       unit: materials.unit,
+      barcode: materials.barcode,
       minimumStock: materials.minimumStock,
     })
     .from(materials)
-    .where(materialSearch)
     .orderBy(materials.code, materials.id)
     .limit(limit)
     .offset(options?.offset ?? 0);
+  const materialMatchesSearch = (material: (typeof materialRows)[number]) =>
+    [material.code, material.name, material.barcode].some(value =>
+      String(value ?? "")
+        .toLocaleLowerCase("en-US")
+        .includes(term ?? "")
+    );
+  const materialGroups = groupMaterialsByCode(materialRows)
+    .filter(group => !term || group.rows.some(materialMatchesSearch))
+    .sort(
+      (left, right) =>
+        left.canonical.code.localeCompare(right.canonical.code) ||
+        left.canonical.id - right.canonical.id
+    );
+  const pageMaterials = materialGroups.flatMap(group => group.rows);
   if (!pageMaterials.length) return [];
 
   const materialIds = pageMaterials.map(material => material.id);
@@ -4761,7 +4788,7 @@ export async function listInventoryBalances(options?: {
       .where(and(...openingMovementFilters)),
   ]);
 
-  return pageMaterials
+  const inventoryRows = pageMaterials
     .map(material => {
       const balances = balanceRows.filter(
         row => row.materialId === material.id
@@ -4852,10 +4879,13 @@ export async function listInventoryBalances(options?: {
         receiptQuantity: String(quantities.receipt),
         returnQuantity: String(quantities.returned),
         outboundQuantity: String(quantities.outbound),
+        materialIds: [material.id],
       };
       // الجرد السنوي يعرض كل مادة لها رصيد تاريخي متبقٍ حتى تاريخ النهاية، حتى لو لم تتحرك خلال السنة.
-    })
-    .filter(row => Number(row.onHandQuantity) > 0);
+    });
+  return mergeInventoryRowsByMaterialCode(inventoryRows).filter(
+    row => Number(row.onHandQuantity) > 0
+  );
 }
 
 export async function listInventoryBalancePage(options?: {
@@ -4881,19 +4911,23 @@ export async function listInventoryBalancePage(options?: {
 
 export async function getMaterialCard(input: {
   materialId: number;
+  materialIds?: number[];
   warehouseId?: number;
   partyId?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const materialIds = Array.from(
+    new Set([input.materialId, ...(input.materialIds ?? [])])
+  );
   const hasLocationScope = input.warehouseId !== undefined;
   const scope = hasLocationScope
     ? and(
-        eq(inventoryBalances.materialId, input.materialId),
+        inArray(inventoryBalances.materialId, materialIds),
         eq(inventoryBalances.warehouseId, input.warehouseId!),
         sql`${inventoryBalances.partyId} <=> ${input.partyId ?? null}`
       )
-    : eq(inventoryBalances.materialId, input.materialId);
+    : inArray(inventoryBalances.materialId, materialIds);
   const balances = await db
     .select({
       id: inventoryBalances.id,
@@ -4925,10 +4959,10 @@ export async function getMaterialCard(input: {
   };
   const movementBase = hasLocationScope
     ? [
-        eq(stockMovements.materialId, input.materialId),
+        inArray(stockMovements.materialId, materialIds),
         eq(stockMovements.warehouseId, input.warehouseId!),
       ]
-    : [eq(stockMovements.materialId, input.materialId)];
+    : [inArray(stockMovements.materialId, materialIds)];
   const scopedMovements = await db
     .select(movementFields)
     .from(stockMovements)

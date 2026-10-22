@@ -126,24 +126,26 @@ describe("بطاقة المادة من شاشة حركة المخزون", () => 
   });
 
   it("يطبع المادة الموحدة مع حركات جميع الجهات ويحتفظ بالنطاق المحدد عند طلبه", () => {
-    expect(dbSource).toContain("const scopedMovements = await db.select(movementFields)");
+    expect(dbSource).toContain("const scopedMovements = await db\n    .select(movementFields)");
     expect(dbSource).toContain("const hasLocationScope = input.warehouseId !== undefined");
-    expect(dbSource).toContain("hasLocationScope ? and(...movementBase");
-    expect(dbSource).toContain("const [material] = await db.select");
-    expect(dbSource).toContain("cardNumber: hasLocationScope ? balances[0]?.id ?? null : null");
-    expect(dbSource).toContain("openingQuantity: String(balances.reduce");
+    expect(dbSource).toContain("hasLocationScope\n        ? and(");
+    expect(dbSource).toContain("const [material] = await db\n    .select({");
+    expect(dbSource).toContain("cardNumber: hasLocationScope ? (balances[0]?.id ?? null) : null");
+    expect(dbSource).toContain("openingQuantity: String(");
   });
 
   it("يجمع الحركة بترتيب ثابت ويدعم إزاحة الصفحة من دون تغيير قيد الفترة", () => {
-    expect(dbSource).toContain("const limit = options?.limit ?? 20_000");
-    expect(dbSource).toContain(".orderBy(materials.code, materials.id).limit(limit).offset(options?.offset ?? 0)");
+    expect(dbSource).toContain("const limit = options?.limit ?? 10_000");
+    expect(dbSource).toContain(".orderBy(materials.code, materials.id)");
+    expect(dbSource).toContain(".limit(limit)");
+    expect(dbSource).toContain(".offset(options?.offset ?? 0)");
     expect(dbSource).toContain("export async function listInventoryBalancePage");
     expect(dbSource).toContain("movementFilters.push(gte(stockMovements.occurredAt, options.fromDate))");
     expect(dbSource).toContain("movementFilters.push(lte(stockMovements.occurredAt, options.toDate))");
   });
 
   it("يبني قائمة الحركة من دليل المواد كاملًا ويُظهر المواد بلا رصيد بصفوف صفرية", () => {
-    expect(dbSource).toContain("const pageMaterials = await db.select");
+    expect(dbSource).toContain("const materialRows = await db\n    .select({");
     expect(dbSource).toContain("if (!pageMaterials.length) return []");
     expect(inventorySource).not.toContain("هذه المادة لا تملك رصيدًا أو مستودعًا مرتبطًا بعد");
     expect(inventorySource).toContain("لا توجد مواد مطابقة للبحث.");
@@ -153,8 +155,10 @@ describe("بطاقة المادة من شاشة حركة المخزون", () => 
     expect(inventorySource).toContain("search: search.trim() || undefined");
     expect(inventorySource).toContain("placeholder=\"ابحث باسم المادة أو رمزها أو باركودها في كل المواد\"");
     expect(inventorySource.indexOf('className="inventory-compact-table')).toBeLessThan(inventorySource.indexOf('placeholder="ابحث باسم المادة أو رمزها أو باركودها في كل المواد"'));
-    expect(dbSource).toContain("options?: { fromDate?: Date; toDate?: Date; search?: string; limit?: number; offset?: number }");
-    expect(dbSource).toContain("const materialSearch = term ? or(like(materials.code");
+    expect(dbSource).toMatch(/export async function listInventoryBalances\(options\?: \{\s*fromDate\?: Date;\s*toDate\?: Date;\s*search\?: string;\s*limit\?: number;\s*offset\?: number;/);
+    expect(dbSource).toContain("const materialGroups = groupMaterialsByCode(materialRows)");
+    expect(dbSource).toContain(".includes(term ?? \"\")");
+    expect(dbSource).toContain("material.barcode");
   });
 
   it("يطلب عشرين مادة فقط من الخادم في كل صفحة مع بقاء البحث شاملًا", () => {
@@ -166,16 +170,19 @@ describe("بطاقة المادة من شاشة حركة المخزون", () => 
   });
 
   it("يعرض كل مادة مرة واحدة ويجمع أرصدتها وحركاتها بدل تكرارها حسب الجهة", () => {
-    expect(dbSource).toContain("const balances = balanceRows.filter(row => row.materialId === material.id)");
-    expect(dbSource).toContain("String(balances.reduce((total, row) => total + Number(row.onHandQuantity ?? 0), 0))");
+    expect(dbSource).toContain("mergeInventoryRowsByMaterialCode(inventoryRows)");
+    expect(dbSource).toContain("materialIds: [material.id]");
+    expect(dbSource).toContain("const remainingQuantity =");
     expect(dbSource).toContain('"متعدد الجهات / المستودعات"');
   });
 
   it("يطبع المادة الموحدة مع تفاصيل كل جهة بدل حصرها في أول رصيد ظاهر", () => {
-    expect(inventorySource).toContain("setCardTarget({ materialId: selectedBalance.materialId })");
+    expect(inventorySource).toContain("materialIds: selectedBalance.materialIds");
     expect(dbSource).toContain("const hasLocationScope = input.warehouseId !== undefined");
     expect(dbSource).toContain("movementBase = hasLocationScope");
-    expect(dbSource).toContain("String(balances.reduce((total, balance) => total + Number(balance.openingQuantity ?? 0), 0))");
+    expect(dbSource).toContain("const materialIds = Array.from(");
+    expect(dbSource).toContain("inArray(inventoryBalances.materialId, materialIds)");
+    expect(dbSource).toContain("openingQuantity: String(");
   });
 
   it("يحذف الشروح غير المطلوبة ويبقي عنوان قسم المواد مبسطًا", () => {

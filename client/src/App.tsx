@@ -9,6 +9,7 @@ import AccessPage from "./pages/Access";
 import AdminAuditPage from "./pages/AdminAudit";
 import CollegesPage from "./pages/Colleges";
 import Home from "./pages/Home";
+import FinancePage from "./pages/Finance";
 import ImportPage from "./pages/Import";
 import InventoryPage from "./pages/Inventory";
 import LoginPage from "./pages/Login";
@@ -21,7 +22,7 @@ import UsersPage from "./pages/Users";
 import StatisticsPage from "./pages/Statistics";
 import WarehousesPage from "./pages/Warehouses";
 
-const withShell = (Page: React.ComponentType) => () => <DashboardLayout preview={import.meta.env.DEV}><Page /></DashboardLayout>;
+const withShell = (Page: React.ComponentType) => () => <DashboardLayout><Page /></DashboardLayout>;
 const Preview = () => <DashboardLayout preview><Home /></DashboardLayout>;
 
 function Router() {
@@ -40,6 +41,7 @@ function Router() {
       <Route path={"/entry"} component={withShell(() => <MemosPage kind="inbound" inboundMode="entry" />)} />
       <Route path={"/outbound"} component={withShell(() => <MemosPage kind="outbound" />)} />
       <Route path={"/transfer"} component={withShell(() => <MemosPage kind="outbound" mode="transfer" />)} />
+      <Route path={"/memos/by-number/:number"} component={withShell(() => <MemoDetailsPage byNumber />)} />
       <Route path={"/memos/:id"} component={withShell(MemoDetailsPage)} />
       <Route path={"/inventory"} component={withShell(InventoryPage)} />
       <Route path={"/reports"} component={withShell(() => <InventoryPage reportsOnly />)} />
@@ -47,6 +49,7 @@ function Router() {
       <Route path={"/access"} component={withShell(AccessPage)} />
       <Route path={"/admin-audit"} component={withShell(AdminAuditPage)} />
       <Route path={"/statistics"} component={withShell(StatisticsPage)} />
+      <Route path={"/finance"} component={withShell(FinancePage)} />
       <Route path={"/users"} component={withShell(UsersPage)} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

@@ -71,7 +71,7 @@ describe("النماذج المالية الرسمية", () => {
   it("تحافظ على أرقام نماذج اليوميات والجرد وبطاقة المادة وكشف الحركة", () => {
     expect(officialFormMeta.inboundJournal.formNumber).toBe(14);
     expect(officialFormMeta.outboundJournal.formNumber).toBe(13);
-    expect(officialFormMeta.inventory.formNumber).toBe(14);
+    expect(officialFormMeta.inventory.formNumber).toBe(18);
     expect(officialFormMeta.materialCard.formNumber).toBe(15);
     expect(officialFormMeta.monthlyMovement.formNumber).toBe(17);
   });

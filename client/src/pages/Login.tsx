@@ -19,6 +19,14 @@ const capabilities = [
   "التقارير الرسمية",
 ];
 
+const roleLabels: Record<string, string> = {
+  admin: "مدير",
+  reviewer: "مراجع",
+  data_entry: "مدخل بيانات",
+  warehouse_keeper: "أمين مستودع",
+  user: "مستخدم",
+};
+
 export default function LoginPage() {
   const { isAuthenticated, user } = useAuth();
   const [, setLocation] = useLocation();
@@ -33,6 +41,14 @@ export default function LoginPage() {
   const localWarehouses = trpc.auth.loginWarehouses.useQuery(undefined, {
     enabled: isLocalDev,
   });
+  const selectedLocalUser = (localUsers.data ?? []).find(
+    entry => entry.id === Number(localUserId)
+  );
+  const availableWarehouses = (localWarehouses.data ?? []).filter(
+    warehouse =>
+      !selectedLocalUser?.warehouseId ||
+      warehouse.id === selectedLocalUser.warehouseId
+  );
   const localLogin = trpc.auth.localLogin.useMutation({
     onSuccess: async () => {
       await utils.auth.me.invalidate();
@@ -56,7 +72,7 @@ export default function LoginPage() {
         </div>
         <div className="flex items-center gap-2">
           <Warehouse className="h-4 w-4 text-[#0874bc]" />
-           المستودعات
+          المستودعات
         </div>
       </div>
       <div className="relative mx-auto flex min-h-[calc(100vh-4.5rem)] max-w-[1400px] items-center justify-center py-8">
@@ -82,7 +98,7 @@ export default function LoginPage() {
               <div className="relative z-10 flex min-h-[360px] flex-col justify-between">
                 <div>
                   <p className="text-lg font-extrabold text-white">
-                      المستودعات
+                    المستودعات
                   </p>
                   <h1 className="mt-2 text-4xl font-black sm:text-5xl">
                     إدارة المستودعات
@@ -147,7 +163,18 @@ export default function LoginPage() {
                     </p>
                     <select
                       value={localUserId}
-                      onChange={event => setLocalUserId(event.target.value)}
+                      onChange={event => {
+                        const nextUserId = event.target.value;
+                        const nextUser = (localUsers.data ?? []).find(
+                          entry => entry.id === Number(nextUserId)
+                        );
+                        setLocalUserId(nextUserId);
+                        setLocalWarehouseId(
+                          nextUser?.warehouseId
+                            ? String(nextUser.warehouseId)
+                            : ""
+                        );
+                      }}
                       aria-label="المستخدم"
                       className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61] outline-none focus:ring-2 focus:ring-[#87c9e9]"
                     >
@@ -157,7 +184,7 @@ export default function LoginPage() {
                           {entry.name ||
                             entry.email ||
                             `مستخدم رقم ${entry.id}`}{" "}
-                          — {entry.role}
+                          — {roleLabels[entry.role] ?? entry.role}
                         </option>
                       ))}
                     </select>
@@ -168,15 +195,23 @@ export default function LoginPage() {
                       }
                       aria-label="المستودع"
                       required
+                      disabled={
+                        !localUserId || Boolean(selectedLocalUser?.warehouseId)
+                      }
                       className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61] outline-none focus:ring-2 focus:ring-[#87c9e9]"
                     >
                       <option value="">اختر المستودع</option>
-                      {(localWarehouses.data ?? []).map(warehouse => (
+                      {availableWarehouses.map(warehouse => (
                         <option key={warehouse.id} value={warehouse.id}>
                           {warehouse.name} — {warehouse.code}
                         </option>
                       ))}
                     </select>
+                    {selectedLocalUser?.warehouseId ? (
+                      <p className="text-xs text-[#17698a]">
+                        هذا الحساب مخصص للمستودع المحدد أعلاه.
+                      </p>
+                    ) : null}
                     <Input
                       type="password"
                       value={localPassword}

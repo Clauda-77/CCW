@@ -43,6 +43,20 @@
       "when": 1787160918384,
       "tag": "0005_pale_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1791885641286,
+      "tag": "0006_add_userwarehouses",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1792581437769,
+      "tag": "0007_goofy_juggernaut",
+      "breakpoints": true
     }
   ]
 }

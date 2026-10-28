@@ -3958,6 +3958,7 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
       notes: memos.notes,
       status: memos.status,
       memoDate: memos.memoDate,
+      createdAt: memos.createdAt,
       folderNumber: memos.folderNumber,
       orderNumber: memos.orderNumber,
       invoiceNumber: memos.invoiceNumber,
@@ -3971,7 +3972,7 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
     .leftJoin(parties, eq(memos.partyId, parties.id))
     .innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
     .where(eq(memos.type, type))
-    .orderBy(desc(memos.memoDate))
+    .orderBy(desc(memos.createdAt), desc(memos.id))
     .limit(limit);
   return rows.map(row => ({
     ...row,
@@ -4955,7 +4956,7 @@ export async function getMaterialCard(input: {
     quantityIn: stockMovements.quantityIn,
     quantityOut: stockMovements.quantityOut,
     partyName: parties.name,
-    notes: memos.notes,
+    notes: memoItems.notes,
   };
   const movementBase = hasLocationScope
     ? [
@@ -4967,6 +4968,7 @@ export async function getMaterialCard(input: {
     .select(movementFields)
     .from(stockMovements)
     .leftJoin(memos, eq(stockMovements.memoId, memos.id))
+    .leftJoin(memoItems, eq(stockMovements.memoItemId, memoItems.id))
     .leftJoin(parties, eq(stockMovements.partyId, parties.id))
     .where(
       hasLocationScope

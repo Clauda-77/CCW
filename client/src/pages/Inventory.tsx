@@ -2912,13 +2912,6 @@ export default function InventoryPage({
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => printReport("inventory")}
-                  >
-                    <FileText className="ml-2 h-4 w-4" />
-                    تقرير الجرد
-                  </Button>
-                  <Button
-                    variant="outline"
                     onClick={() => printReport("movementAll")}
                   >
                     <FileText className="ml-2 h-4 w-4" />

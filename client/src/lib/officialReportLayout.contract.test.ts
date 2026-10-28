@@ -55,7 +55,11 @@ describe("عقد طباعة النماذج الرسمية غير التابعة 
 
   it("يطابق بطاقة المادة من الرأس إلى جدول المستند والحركة", () => {
     const card = htmlFor("materialCard", [[1, "إدخال", "2/21", "2026/7/27", 50, "", 50, "2026/7/27", "المستودع المركزي", ""]], { code: "1122", name: "ظرف أسمر وسط", unit: "عدد", notes: "" });
-    ["بطاقة مواد رقم", "نموذج مستودع رقم ( 15 )", "اسم المادة : ظرف أسمر وسط", "المستند", "الحركة", "الجهة المسلمة أو"].forEach(label => expect(card).toContain(label));
+    ["بطاقة مواد رقم", "نموذج مستودع رقم ( 15 )", "اسم المادة : ظرف أسمر وسط", "المستند", "الحركة", "الجهة المسلمة أو", "الإدخال", "الإخراج"].forEach(label => expect(card).toContain(label));
+    expect(card).not.toContain("إدخالات");
+    expect(card).not.toContain("إخراجات");
+    expect(card).toContain("material-card-report");
+    expect(card).toContain(".material-card-report .official-table td:nth-child(5){text-align:center}");
     expect(card).toContain('class="material-code"');
     expect(card).toContain("رمزها : 1122");
     expect(card).toContain('class="card-header"');
@@ -66,6 +70,10 @@ describe("عقد طباعة النماذج الرسمية غير التابعة 
     expect(card).toContain(".card-title p{margin-top:6mm;font-size:20px;text-align:right}");
     expect(card).toContain(".government{font-size:23px;line-height:1.42;font-weight:700;text-align:center}");
     expect(card).toContain(".government span{display:block;font-size:18px;text-align:center}");
+    expect(card).not.toContain("ملاحظات :");
+    expect(card).not.toContain("الحد الأدنى :");
+    expect(card).not.toContain("الحد الأقصى :");
+    expect(card).toContain("الحد الأدنى<br>الحد الأقصى<br>");
     expect(card).toContain('id="download-pdf"');
     expect(card).toContain("document.getElementById(\"download-pdf\")");
     expect(card).toContain("<strong></strong>");

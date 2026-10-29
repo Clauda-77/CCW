@@ -1,4 +1,3 @@
-
 // import { randomUUID } from "node:crypto";
 // import {
 //   and,
@@ -679,73 +678,6 @@
 //   };
 // }
 
-// export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
-//   const db = await getDb();
-//   if (!db) return { items: [], total: 0, page, pageSize, totalPages: 0 };
-
-//   const columns = {
-//     id: materials.id,
-//     code: materials.code,
-//     name: materials.name,
-//     description: materials.description,
-//     unit: materials.unit,
-//     barcode: materials.barcode,
-//     minimumStock: materials.minimumStock,
-//     isActive: materials.isActive,
-//   };
-//   const query = search.trim();
-//   const condition = query
-//     ? or(
-//         like(materials.code, `%${query}%`),
-//         like(materials.name, `%${query}%`),
-//         like(materials.barcode, `%${query}%`)
-//       )
-//     : undefined;
-//   const safePage = Math.max(1, Math.floor(page));
-//   const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
-
-//   const [totalRows, materialRows] = await Promise.all([
-//     db.select({ value: count() }).from(materials).where(condition),
-//     db
-//       .select(columns)
-//       .from(materials)
-//       .where(condition)
-//       .orderBy(materials.id)
-//       .limit(safePageSize)
-//       .offset((safePage - 1) * safePageSize),
-//   ]);
-//   const total = totalRows[0]?.value ?? 0;
-//   const totalPages = Math.ceil(total / safePageSize);
-//   if (!materialRows.length)
-//     return { items: [], total, page: safePage, pageSize: safePageSize, totalPages };
-
-//   const balanceRows = await db
-//     .select({
-//       materialId: inventoryBalances.materialId,
-//       onHandQuantity: inventoryBalances.onHandQuantity,
-//     })
-//     .from(inventoryBalances)
-//     .where(inArray(inventoryBalances.materialId, materialRows.map(row => row.id)));
-//   const currentQuantities = new Map<number, number>();
-//   for (const balance of balanceRows) {
-//     currentQuantities.set(
-//       balance.materialId,
-//       (currentQuantities.get(balance.materialId) ?? 0) + Number(balance.onHandQuantity ?? 0)
-//     );
-//   }
-//   return {
-//     items: materialRows.map(material => ({
-//       ...material,
-//       currentQuantity: String(currentQuantities.get(material.id) ?? 0),
-//     })),
-//     total,
-//     page: safePage,
-//     pageSize: safePageSize,
-//     totalPages,
-//   };
-// }
-
-// // يبقى هذا المسار القديم مصفوفة حتى لا تتعطل المذكرات والإحصائيات والتقارير.
 // export async function listMaterials(search = "", limit = 60) {
 //   const db = await getDb();
 //   if (!db) return [];
@@ -761,29 +693,44 @@
 //   };
 //   const query = search.trim();
 //   const materialRows = query
-//     ? await db.select(columns).from(materials).where(or(
-//         like(materials.code, `%${query}%`),
-//         like(materials.name, `%${query}%`),
-//         like(materials.barcode, `%${query}%`)
-//       )).limit(limit)
+//     ? await db
+//         .select(columns)
+//         .from(materials)
+//         .where(
+//           or(
+//             like(materials.code, `%${query}%`),
+//             like(materials.name, `%${query}%`),
+//             like(materials.barcode, `%${query}%`)
+//           )
+//         )
+//         .limit(limit)
 //     : await db.select(columns).from(materials).limit(limit);
 //   if (!materialRows.length) return [];
+
 //   const balanceRows = await db
-//     .select({ materialId: inventoryBalances.materialId, onHandQuantity: inventoryBalances.onHandQuantity })
+//     .select({
+//       materialId: inventoryBalances.materialId,
+//       onHandQuantity: inventoryBalances.onHandQuantity,
+//     })
 //     .from(inventoryBalances)
-//     .where(inArray(inventoryBalances.materialId, materialRows.map(row => row.id)));
+//     .where(
+//       inArray(
+//         inventoryBalances.materialId,
+//         materialRows.map(row => row.id)
+//       )
+//     );
 //   const currentQuantities = new Map<number, number>();
 //   for (const balance of balanceRows) {
-//     currentQuantities.set(balance.materialId, (currentQuantities.get(balance.materialId) ?? 0) + Number(balance.onHandQuantity ?? 0));
+//     currentQuantities.set(
+//       balance.materialId,
+//       (currentQuantities.get(balance.materialId) ?? 0) +
+//         Number(balance.onHandQuantity ?? 0)
+//     );
 //   }
 //   return materialRows.map(material => ({
 //     ...material,
 //     currentQuantity: String(currentQuantities.get(material.id) ?? 0),
 //   }));
-// }
-
-// function normalizeMaterialCode(value: string) {
-//   return value.trim().replace(/^legacy[-_\s]*/i, "");
 // }
 
 // export async function createMaterial(
@@ -800,10 +747,8 @@
 //   const db = await getDb();
 //   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
 //   return db.transaction(async tx => {
-//     const normalizedCode = normalizeMaterialCode(input.code);
-//     if (!normalizedCode) throw new Error("رمز المادة غير صالح بعد إزالة البادئة القديمة.");
 //     const result = await tx.insert(materials).values({
-//       code: normalizedCode,
+//       code: input.code.trim(),
 //       name: input.name.trim(),
 //       description: input.description?.trim() || null,
 //       unit: input.unit.trim(),
@@ -812,13 +757,18 @@
 //       isActive: true,
 //     });
 //     const id = Number(result[0].insertId);
+//     if (!Number.isInteger(id) || id <= 0) {
+//       throw new Error(
+//         "تعذر إنشاء المادة بمعرّف صحيح. تحقق من أن materials.id هو PRIMARY KEY وAUTO_INCREMENT، ثم أعد المحاولة."
+//       );
+//     }
 //     await writeAdminAudit(tx, {
 //       actorId,
 //       action: "material_created",
 //       entityType: "material",
 //       entityId: id,
 //       entityLabel: input.name.trim(),
-//       details: `إضافة مادة جديدة: الرمز ${normalizedCode}؛ الوحدة ${input.unit.trim()}.`,
+//       details: `إضافة مادة جديدة: الرمز ${input.code.trim()}؛ الوحدة ${input.unit.trim()}.`,
 //     });
 //     return { success: true as const, id };
 //   });
@@ -839,12 +789,10 @@
 //   const db = await getDb();
 //   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
 //   return db.transaction(async tx => {
-//     const normalizedCode = normalizeMaterialCode(input.code);
-//     if (!normalizedCode) throw new Error("رمز المادة غير صالح بعد إزالة البادئة القديمة.");
 //     await tx
 //       .update(materials)
 //       .set({
-//         code: normalizedCode,
+//         code: input.code.trim(),
 //         name: input.name.trim(),
 //         description: input.description?.trim() || null,
 //         unit: input.unit.trim(),
@@ -858,7 +806,7 @@
 //       entityType: "material",
 //       entityId: id,
 //       entityLabel: input.name.trim(),
-//       details: `تعديل بيانات المادة: الرمز ${normalizedCode}؛ الوحدة ${input.unit.trim()}.`,
+//       details: `تعديل بيانات المادة: الرمز ${input.code.trim()}؛ الوحدة ${input.unit.trim()}.`,
 //     });
 //     return { success: true as const };
 //   });
@@ -1367,6 +1315,7 @@
 //     .select({
 //       id: memos.id,
 //       memoNumber: memos.memoNumber,
+//       sourceMemoNumber: memos.sourceMemoNumber,
 //       type: memos.type,
 //       notes: memos.notes,
 //       status: memos.status,
@@ -1689,7 +1638,6 @@
 //       memoNumber,
 //       status,
 //       warehouseId: input.warehouseId,
-//       relatedMemoId: null,
 //       partyId: input.partyId ?? null,
 //       folderNumber: input.folderNumber?.trim() || null,
 //       orderNumber: input.orderNumber?.trim() || null,
@@ -1711,46 +1659,6 @@
 //         notes: item.notes?.trim() || null,
 //       }))
 //     );
-//     if (input.classification === "transfer" && input.type === "outbound") {
-//       const [coordinationWarehouse] = await tx
-//         .select({ id: warehouses.id })
-//         .from(warehouses)
-//         .where(and(eq(warehouses.name, "مستودع المنسقات"), eq(warehouses.isActive, true)))
-//         .limit(1);
-//       if (!coordinationWarehouse) {
-//         throw new Error("لم يتم العثور على مستودع «مستودع المنسقات». أنشئه أو فعّله قبل حفظ محضر التركيب والتنسيق.");
-//       }
-//       if (coordinationWarehouse.id === input.warehouseId) {
-//         throw new Error("لا يمكن أن يكون مستودع المصدر هو مستودع المنسقات.");
-//       }
-//       const pairedNumber = `${memoNumber}-تنسيق`.slice(0, 64);
-//       const paired = await tx.insert(memos).values({
-//         type: "inbound",
-//         memoNumber: pairedNumber,
-//         status: "pending_review",
-//         warehouseId: coordinationWarehouse.id,
-//         relatedMemoId: memoId,
-//         partyId: null,
-//         folderNumber: input.folderNumber?.trim() || null,
-//         orderNumber: input.orderNumber?.trim() || null,
-//         orderDate: input.orderDate ?? null,
-//         invoiceNumber: input.invoiceNumber?.trim() || null,
-//         invoiceDate: input.invoiceDate ?? null,
-//         referenceNumber: memoNumber,
-//         memoDate: input.memoDate,
-//         notes: `إدخال تلقائي للمواد القديمة المفكوكة من محضر التركيب والتنسيق ${memoNumber} إلى مستودع المنسقات.`,
-//         createdBy: input.createdBy,
-//       });
-//       const pairedId = Number(paired[0].insertId);
-//       await tx.insert(memoItems).values(input.items.map(item => ({
-//         memoId: pairedId,
-//         materialId: item.materialId,
-//         quantity: String(item.quantity),
-//         unitPrice: item.unitPrice === undefined ? null : String(item.unitPrice),
-//         notes: `مادة مفكوكة من محضر ${memoNumber}`,
-//       })));
-//       await tx.update(memos).set({ relatedMemoId: pairedId }).where(eq(memos.id, memoId));
-//     }
 //     await writeAdminAudit(tx, {
 //       actorId: input.createdBy,
 //       action: "memo_created",
@@ -1771,6 +1679,7 @@
 //       id: memos.id,
 //       type: memos.type,
 //       memoNumber: memos.memoNumber,
+//       sourceMemoNumber: memos.sourceMemoNumber,
 //       status: memos.status,
 //       warehouseId: memos.warehouseId,
 //       partyId: memos.partyId,
@@ -1806,20 +1715,7 @@
 //     .from(memoItems)
 //     .innerJoin(materials, eq(memoItems.materialId, materials.id))
 //     .where(eq(memoItems.memoId, id));
-//   const mergedItems = new Map<string, (typeof items)[number]>();
-//   for (const item of items) {
-//     const key = [item.materialId, item.unitPrice ?? "", item.notes ?? ""].join("|");
-//     if (!mergedItems.has(key)) mergedItems.set(key, item);
-//   }
-//   return { ...header, items: Array.from(mergedItems.values()) };
-// }
-
-// export async function getMemoDetailsByNumber(memoNumber: string) {
-//   const db = await getDb();
-//   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-//   const [row] = await db.select({ id: memos.id }).from(memos).where(eq(memos.memoNumber, memoNumber.trim())).limit(1);
-//   if (!row) throw new Error("المذكرة غير موجودة.");
-//   return getMemoDetails(row.id);
+//   return { ...header, items };
 // }
 
 // export async function updateMemo(input: {
@@ -1848,12 +1744,6 @@
 //   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
 //   if (!input.items.length)
 //     throw new Error("أضف بند مادة واحدًا على الأقل إلى المذكرة.");
-//   const normalizedItems = new Map<string, (typeof input.items)[number]>();
-//   for (const item of input.items) {
-//     const key = [item.materialId, item.unitPrice ?? "", item.notes?.trim() ?? ""].join("|");
-//     if (!normalizedItems.has(key)) normalizedItems.set(key, item);
-//   }
-//   const itemsToSave = Array.from(normalizedItems.values());
 //   return db.transaction(async tx => {
 //     const [memo] = await tx
 //       .select({ id: memos.id, type: memos.type, status: memos.status })
@@ -1913,7 +1803,7 @@
 //       .where(eq(memos.id, input.id));
 //     await tx.delete(memoItems).where(eq(memoItems.memoId, input.id));
 //     await tx.insert(memoItems).values(
-//       itemsToSave.map(item => ({
+//       input.items.map(item => ({
 //         memoId: input.id,
 //         materialId: item.materialId,
 //         quantity: String(item.quantity),
@@ -1927,7 +1817,7 @@
 //       entityType: "memo",
 //       entityId: input.id,
 //       entityLabel: input.memoNumber.trim(),
-//       details: `تعديل المذكرة: تحديث الرأس واستبدال ${itemsToSave.length} مادة.`,
+//       details: `تعديل المذكرة: تحديث الرأس واستبدال ${input.items.length} مادة.`,
 //     });
 //     return { success: true as const, id: input.id };
 //   });
@@ -2011,18 +1901,11 @@
 //     if (!memo) throw new Error("المذكرة غير موجودة.");
 //     if (memo.status === "approved")
 //       return { success: true as const, alreadyApproved: true };
-//     if (memo.type === "inbound" && memo.relatedMemoId)
-//       throw new Error("هذا قيد الإدخال التلقائي لمستودع المنسقات. اعتمد محضر التركيب الأساسي فقط.");
 //     const items = await tx
 //       .select()
 //       .from(memoItems)
 //       .where(eq(memoItems.memoId, id));
-//     const mergedItems = new Map<string, (typeof items)[number]>();
 //     for (const item of items) {
-//       const key = [item.materialId, item.unitPrice ?? "", item.notes ?? ""].join("|");
-//       if (!mergedItems.has(key)) mergedItems.set(key, item);
-//     }
-//     for (const item of Array.from(mergedItems.values())) {
 //       const quantity = Number(item.quantity);
 //       const [balance] = await tx
 //         .select()
@@ -2070,22 +1953,6 @@
 //         occurredAt: memo.memoDate,
 //         createdBy: approvedBy,
 //       });
-//     }
-//     if (memo.type === "outbound" && memo.relatedMemoId) {
-//       const [paired] = await tx.select().from(memos).where(eq(memos.id, memo.relatedMemoId)).limit(1);
-//       if (!paired) throw new Error("محضر مستودع المنسقات المرتبط غير موجود.");
-//       const pairedItems = await tx.select().from(memoItems).where(eq(memoItems.memoId, paired.id));
-//       for (const item of pairedItems) {
-//         const quantity = Number(item.quantity);
-//         const [balance] = await tx.select().from(inventoryBalances).where(and(eq(inventoryBalances.materialId, item.materialId), eq(inventoryBalances.warehouseId, paired.warehouseId))).limit(1);
-//         if (balance) {
-//           await tx.update(inventoryBalances).set({ onHandQuantity: sql`${inventoryBalances.onHandQuantity} + ${quantity}` }).where(eq(inventoryBalances.id, balance.id));
-//         } else {
-//           await tx.insert(inventoryBalances).values({ materialId: item.materialId, warehouseId: paired.warehouseId, partyId: null, openingQuantity: "0", onHandQuantity: String(quantity), reservedQuantity: "0" });
-//         }
-//         await tx.insert(stockMovements).values({ materialId: item.materialId, warehouseId: paired.warehouseId, partyId: null, memoId: paired.id, memoItemId: item.id, movementType: "inbound", quantityIn: String(quantity), quantityOut: "0", occurredAt: paired.memoDate, createdBy: approvedBy });
-//       }
-//       await tx.update(memos).set({ status: "approved", approvedBy, approvedAt: new Date(), reviewedBy: approvedBy, reviewedAt: new Date() }).where(eq(memos.id, paired.id));
 //     }
 //     await tx
 //       .update(memos)
@@ -2312,6 +2179,82 @@
 //   return { rows, hasMore: offset + rows.length < total, total };
 // }
 
+// export async function getMaterialWarehouseBalance(input: {
+//   materialId: number;
+//   warehouseId: number;
+// }) {
+//   const db = await getDb();
+//   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+//   const [[material], [warehouse], [balance]] = await Promise.all([
+//     db
+//       .select({
+//         id: materials.id,
+//         code: materials.code,
+//         name: materials.name,
+//         unit: materials.unit,
+//       })
+//       .from(materials)
+//       .where(eq(materials.id, input.materialId))
+//       .limit(1),
+//     db
+//       .select({ id: warehouses.id, name: warehouses.name })
+//       .from(warehouses)
+//       .where(eq(warehouses.id, input.warehouseId))
+//       .limit(1),
+//     db
+//       .select({
+//         quantity: sql<string>`coalesce(sum(${inventoryBalances.onHandQuantity}), 0)`,
+//       })
+//       .from(inventoryBalances)
+//       .where(
+//         and(
+//           eq(inventoryBalances.materialId, input.materialId),
+//           eq(inventoryBalances.warehouseId, input.warehouseId)
+//         )
+//       ),
+//   ]);
+//   if (!material || !warehouse) return null;
+//   return {
+//     materialId: material.id,
+//     materialCode: material.code,
+//     materialName: material.name,
+//     unit: material.unit,
+//     warehouseId: warehouse.id,
+//     warehouseName: warehouse.name,
+//     quantity: String(balance?.quantity ?? "0"),
+//   };
+// }
+
+// export async function getMaterialWarehouseCostEstimate(input: {
+//   materialId: number;
+//   warehouseId: number;
+// }) {
+//   const db = await getDb();
+//   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+//   const [latestPurchase] = await db
+//     .select({
+//       unitPrice: memoItems.unitPrice,
+//       memoNumber: memos.memoNumber,
+//       memoDate: memos.memoDate,
+//     })
+//     .from(memoItems)
+//     .innerJoin(memos, eq(memoItems.memoId, memos.id))
+//     .where(
+//       and(
+//         eq(memoItems.materialId, input.materialId),
+//         eq(memos.warehouseId, input.warehouseId),
+//         eq(memos.type, "inbound"),
+//         eq(memos.status, "approved"),
+//         gt(memos.id, 0),
+//         sql`${memoItems.unitPrice} IS NOT NULL`,
+//         sql`(${memos.notes} IS NULL OR (${memos.notes} NOT LIKE '%إدخال مواد قديمة%' AND ${memos.notes} NOT LIKE '%إرجاع%' AND ${memos.notes} NOT LIKE '%مرتجع%'))`
+//       )
+//     )
+//     .orderBy(desc(memos.memoDate), desc(memos.id), desc(memoItems.id))
+//     .limit(1);
+//   return latestPurchase ?? null;
+// }
+
 // export async function getMaterialCard(input: {
 //   materialId: number;
 //   warehouseId?: number;
@@ -2400,67 +2343,6 @@
 //   };
 // }
 
-// export async function getMaterialWarehouseBalance(input: {
-//   materialId?: number;
-//   warehouseId?: number;
-//   allowedWarehouseIds?: number[] | null;
-// }) {
-//   const db = await getDb();
-//   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-//   const warehouseScope = input.allowedWarehouseIds?.length
-//     ? inArray(inventoryBalances.warehouseId, input.allowedWarehouseIds)
-//     : undefined;
-//   const movementWarehouseScope = input.allowedWarehouseIds?.length
-//     ? inArray(stockMovements.warehouseId, input.allowedWarehouseIds)
-//     : undefined;
-//   const balanceConditions = [
-//     input.materialId ? eq(inventoryBalances.materialId, input.materialId) : undefined,
-//     input.warehouseId ? eq(inventoryBalances.warehouseId, input.warehouseId) : undefined,
-//     warehouseScope,
-//   ].filter(Boolean) as ReturnType<typeof eq>[];
-//   const movementConditions = [
-//     input.materialId ? eq(stockMovements.materialId, input.materialId) : undefined,
-//     input.warehouseId ? eq(stockMovements.warehouseId, input.warehouseId) : undefined,
-//     movementWarehouseScope,
-//   ].filter(Boolean) as ReturnType<typeof eq>[];
-//   const [[balance], [movementTotals]] = await Promise.all([
-//     db.select({ quantity: sql<string>`coalesce(sum(${inventoryBalances.onHandQuantity}), 0)`, rows: count() })
-//       .from(inventoryBalances).where(balanceConditions.length ? and(...balanceConditions) : undefined),
-//     db.select({
-//       quantityIn: sql<string>`coalesce(sum(${stockMovements.quantityIn}), 0)`,
-//       quantityOut: sql<string>`coalesce(sum(${stockMovements.quantityOut}), 0)`,
-//     })
-//       .from(stockMovements)
-//       .where(movementConditions.length ? and(...movementConditions) : undefined),
-//   ]);
-//   const storedQuantity = Number(balance?.quantity ?? 0);
-//   const movementQuantity = Number(movementTotals?.quantityIn ?? 0) - Number(movementTotals?.quantityOut ?? 0);
-//   const quantity = balance?.rows && balance.rows > 0 && (storedQuantity !== 0 || movementQuantity === 0)
-//     ? storedQuantity
-//     : movementQuantity;
-//   return {
-//     materialId: input.materialId ?? null,
-//     materialCode: null,
-//     materialName: input.materialId ? "المادة المحددة" : "كل المواد",
-//     unit: "إجمالي",
-//     warehouseId: input.warehouseId ?? null,
-//     warehouseName: input.warehouseId ? "المستودع المحدد" : "كل المستودعات",
-//     quantity: String(quantity),
-//   };
-// }
-
-// export async function getMaterialWarehouseCostEstimate(input: { materialId: number; warehouseId: number }) {
-//   const db = await getDb();
-//   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-//   const [row] = await db.select({ unitPrice: memoItems.unitPrice, memoNumber: memos.memoNumber, memoDate: memos.memoDate })
-//     .from(memoItems)
-//     .innerJoin(memos, eq(memoItems.memoId, memos.id))
-//     .where(and(eq(memoItems.materialId, input.materialId), eq(memos.warehouseId, input.warehouseId), eq(memos.type, "inbound"), eq(memos.status, "approved"), sql`${memoItems.unitPrice} is not null`))
-//     .orderBy(desc(memos.memoDate), desc(memoItems.id))
-//     .limit(1);
-//   return row ? { ...row, unitPrice: String(row.unitPrice) } : null;
-// }
-
 // export const dbSql = sql;
 
 // export async function deleteMemo(id: number, deletedBy: number) {
@@ -2537,34 +2419,6 @@
 //     .orderBy(desc(memoReconciliations.matchedAt), desc(memoReconciliations.id));
 // }
 
-// export async function listCoordinationIncoming(warehouseIds?: number[] | null) {
-//   const db = await getDb();
-//   if (!db) return [];
-//   const rows = await db.select({
-//     id: memos.id,
-//     memoNumber: memos.memoNumber,
-//     memoDate: memos.memoDate,
-//     status: memos.status,
-//     warehouseId: memos.warehouseId,
-//     warehouseName: warehouses.name,
-//     relatedMemoId: memos.relatedMemoId,
-//     notes: memos.notes,
-//   }).from(memos).innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
-//     .where(and(eq(memos.type, "inbound"), eq(warehouses.name, "مستودع المنسقات"), like(memos.notes, "إدخال تلقائي للمواد القديمة%")))
-//     .orderBy(desc(memos.memoDate), desc(memos.id));
-//   if (!rows.length) return [];
-//   const sourceIds = rows.map(row => row.relatedMemoId).filter((id): id is number => Boolean(id));
-//   const sources = sourceIds.length ? await db.select({ id: memos.id, memoNumber: memos.memoNumber, warehouseId: memos.warehouseId, warehouseName: warehouses.name }).from(memos).innerJoin(warehouses, eq(memos.warehouseId, warehouses.id)).where(inArray(memos.id, sourceIds)) : [];
-//   const sourceById = new Map(sources.map(row => [row.id, row]));
-//   return rows.filter(row => {
-//     const source = row.relatedMemoId ? sourceById.get(row.relatedMemoId) : undefined;
-//     return source && (warehouseIds === null || warehouseIds === undefined || warehouseIds.includes(source.warehouseId));
-//   }).map(row => ({ ...row, source: row.relatedMemoId ? sourceById.get(row.relatedMemoId) ?? null : null }));
-// }
-
-
-
-
 
 import { randomUUID } from "node:crypto";
 import {
@@ -2598,15 +2452,10 @@ import {
   userWarehouses,
   warehouses,
 } from "../drizzle/schema";
-import {
-  groupMaterialsByCode,
-  mergeInventoryRowsByMaterialCode,
-} from "./materialIdentity";
 import { ENV } from "./_core/env";
+import { groupMaterialsByCode } from "./materialIdentity";
 import { assertRoleChangeAllowed } from "./userRoles";
-
 let _db: ReturnType<typeof drizzle> | null = null;
-
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -3250,9 +3099,66 @@ export async function getWarehouseDashboard() {
   };
 }
 
+export async function listMaterials(search = "", limit = 60) {
+  const db = await getDb();
+  if (!db) return [];
+  const columns = {
+    id: materials.id,
+    code: materials.code,
+    name: materials.name,
+    description: materials.description,
+    unit: materials.unit,
+    barcode: materials.barcode,
+    minimumStock: materials.minimumStock,
+    isActive: materials.isActive,
+  };
+  const query = search.trim();
+  const materialRows = query
+    ? await db
+        .select(columns)
+        .from(materials)
+        .where(
+          or(
+            like(materials.code, `%${query}%`),
+            like(materials.name, `%${query}%`),
+            like(materials.barcode, `%${query}%`)
+          )
+        )
+        .limit(limit)
+    : await db.select(columns).from(materials).limit(limit);
+  if (!materialRows.length) return [];
+
+  const balanceRows = await db
+    .select({
+      materialId: inventoryBalances.materialId,
+      onHandQuantity: inventoryBalances.onHandQuantity,
+    })
+    .from(inventoryBalances)
+    .where(
+      inArray(
+        inventoryBalances.materialId,
+        materialRows.map(row => row.id)
+      )
+    );
+  const currentQuantities = new Map<number, number>();
+  for (const balance of balanceRows) {
+    currentQuantities.set(
+      balance.materialId,
+      (currentQuantities.get(balance.materialId) ?? 0) +
+        Number(balance.onHandQuantity ?? 0)
+    );
+  }
+  return materialRows.map(material => ({
+    ...material,
+    currentQuantity: String(currentQuantities.get(material.id) ?? 0),
+  }));
+}
+
 export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
   const db = await getDb();
-  if (!db) return { items: [], total: 0, page, pageSize, totalPages: 0 };
+  const safePage = Math.max(1, Math.floor(page));
+  const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
+  if (!db) return { items: [], total: 0, page: safePage, pageSize: safePageSize, totalPages: 0 };
 
   const columns = {
     id: materials.id,
@@ -3265,10 +3171,6 @@ export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
     isActive: materials.isActive,
   };
   const query = search.trim().toLocaleLowerCase("en-US");
-  const safePage = Math.max(1, Math.floor(page));
-  const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
-  // Collapse legacy duplicate definitions before paging so a duplicate code
-  // cannot appear on two different pages or inflate the result count.
   const materialRows = await db
     .select(columns)
     .from(materials)
@@ -3305,9 +3207,11 @@ export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
   for (const balance of balanceRows) {
     currentQuantities.set(
       balance.materialId,
-      (currentQuantities.get(balance.materialId) ?? 0) + Number(balance.onHandQuantity ?? 0)
+      (currentQuantities.get(balance.materialId) ?? 0) +
+        Number(balance.onHandQuantity ?? 0)
     );
   }
+
   return {
     items: pageGroups.map(group => {
       const displayMaterial =
@@ -3332,47 +3236,6 @@ export async function listMaterialsPage(search = "", page = 1, pageSize = 20) {
   };
 }
 
-// يبقى هذا المسار القديم مصفوفة حتى لا تتعطل المذكرات والإحصائيات والتقارير.
-export async function listMaterials(search = "", limit = 60) {
-  const db = await getDb();
-  if (!db) return [];
-  const columns = {
-    id: materials.id,
-    code: materials.code,
-    name: materials.name,
-    description: materials.description,
-    unit: materials.unit,
-    barcode: materials.barcode,
-    minimumStock: materials.minimumStock,
-    isActive: materials.isActive,
-  };
-  const query = search.trim();
-  const materialRows = query
-    ? await db.select(columns).from(materials).where(or(
-        like(materials.code, `%${query}%`),
-        like(materials.name, `%${query}%`),
-        like(materials.barcode, `%${query}%`)
-      )).limit(limit)
-    : await db.select(columns).from(materials).limit(limit);
-  if (!materialRows.length) return [];
-  const balanceRows = await db
-    .select({ materialId: inventoryBalances.materialId, onHandQuantity: inventoryBalances.onHandQuantity })
-    .from(inventoryBalances)
-    .where(inArray(inventoryBalances.materialId, materialRows.map(row => row.id)));
-  const currentQuantities = new Map<number, number>();
-  for (const balance of balanceRows) {
-    currentQuantities.set(balance.materialId, (currentQuantities.get(balance.materialId) ?? 0) + Number(balance.onHandQuantity ?? 0));
-  }
-  return materialRows.map(material => ({
-    ...material,
-    currentQuantity: String(currentQuantities.get(material.id) ?? 0),
-  }));
-}
-
-function normalizeMaterialCode(value: string) {
-  return value.trim().replace(/^legacy[-_\s]*/i, "");
-}
-
 export async function createMaterial(
   input: {
     code: string;
@@ -3387,10 +3250,8 @@ export async function createMaterial(
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
   return db.transaction(async tx => {
-    const normalizedCode = normalizeMaterialCode(input.code);
-    if (!normalizedCode) throw new Error("رمز المادة غير صالح بعد إزالة البادئة القديمة.");
     const result = await tx.insert(materials).values({
-      code: normalizedCode,
+      code: input.code.trim(),
       name: input.name.trim(),
       description: input.description?.trim() || null,
       unit: input.unit.trim(),
@@ -3399,13 +3260,18 @@ export async function createMaterial(
       isActive: true,
     });
     const id = Number(result[0].insertId);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error(
+        "تعذر إنشاء المادة بمعرّف صحيح. تحقق من أن materials.id هو PRIMARY KEY وAUTO_INCREMENT، ثم أعد المحاولة."
+      );
+    }
     await writeAdminAudit(tx, {
       actorId,
       action: "material_created",
       entityType: "material",
       entityId: id,
       entityLabel: input.name.trim(),
-      details: `إضافة مادة جديدة: الرمز ${normalizedCode}؛ الوحدة ${input.unit.trim()}.`,
+      details: `إضافة مادة جديدة: الرمز ${input.code.trim()}؛ الوحدة ${input.unit.trim()}.`,
     });
     return { success: true as const, id };
   });
@@ -3426,12 +3292,10 @@ export async function updateMaterial(
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
   return db.transaction(async tx => {
-    const normalizedCode = normalizeMaterialCode(input.code);
-    if (!normalizedCode) throw new Error("رمز المادة غير صالح بعد إزالة البادئة القديمة.");
     await tx
       .update(materials)
       .set({
-        code: normalizedCode,
+        code: input.code.trim(),
         name: input.name.trim(),
         description: input.description?.trim() || null,
         unit: input.unit.trim(),
@@ -3445,7 +3309,7 @@ export async function updateMaterial(
       entityType: "material",
       entityId: id,
       entityLabel: input.name.trim(),
-      details: `تعديل بيانات المادة: الرمز ${normalizedCode}؛ الوحدة ${input.unit.trim()}.`,
+      details: `تعديل بيانات المادة: الرمز ${input.code.trim()}؛ الوحدة ${input.unit.trim()}.`,
     });
     return { success: true as const };
   });
@@ -3954,11 +3818,11 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
     .select({
       id: memos.id,
       memoNumber: memos.memoNumber,
+      sourceMemoNumber: memos.sourceMemoNumber,
       type: memos.type,
       notes: memos.notes,
       status: memos.status,
       memoDate: memos.memoDate,
-      createdAt: memos.createdAt,
       folderNumber: memos.folderNumber,
       orderNumber: memos.orderNumber,
       invoiceNumber: memos.invoiceNumber,
@@ -3972,7 +3836,7 @@ export async function listMemos(type: "inbound" | "outbound", limit = 60) {
     .leftJoin(parties, eq(memos.partyId, parties.id))
     .innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
     .where(eq(memos.type, type))
-    .orderBy(desc(memos.createdAt), desc(memos.id))
+    .orderBy(desc(memos.memoDate))
     .limit(limit);
   return rows.map(row => ({
     ...row,
@@ -4277,7 +4141,6 @@ export async function createMemo(input: {
       memoNumber,
       status,
       warehouseId: input.warehouseId,
-      relatedMemoId: null,
       partyId: input.partyId ?? null,
       folderNumber: input.folderNumber?.trim() || null,
       orderNumber: input.orderNumber?.trim() || null,
@@ -4299,46 +4162,6 @@ export async function createMemo(input: {
         notes: item.notes?.trim() || null,
       }))
     );
-    if (input.classification === "transfer" && input.type === "outbound") {
-      const [coordinationWarehouse] = await tx
-        .select({ id: warehouses.id })
-        .from(warehouses)
-        .where(and(eq(warehouses.name, "مستودع المنسقات"), eq(warehouses.isActive, true)))
-        .limit(1);
-      if (!coordinationWarehouse) {
-        throw new Error("لم يتم العثور على مستودع «مستودع المنسقات». أنشئه أو فعّله قبل حفظ محضر التركيب والتنسيق.");
-      }
-      if (coordinationWarehouse.id === input.warehouseId) {
-        throw new Error("لا يمكن أن يكون مستودع المصدر هو مستودع المنسقات.");
-      }
-      const pairedNumber = `${memoNumber}-تنسيق`.slice(0, 64);
-      const paired = await tx.insert(memos).values({
-        type: "inbound",
-        memoNumber: pairedNumber,
-        status: "pending_review",
-        warehouseId: coordinationWarehouse.id,
-        relatedMemoId: memoId,
-        partyId: null,
-        folderNumber: input.folderNumber?.trim() || null,
-        orderNumber: input.orderNumber?.trim() || null,
-        orderDate: input.orderDate ?? null,
-        invoiceNumber: input.invoiceNumber?.trim() || null,
-        invoiceDate: input.invoiceDate ?? null,
-        referenceNumber: memoNumber,
-        memoDate: input.memoDate,
-        notes: `إدخال تلقائي للمواد القديمة المفكوكة من محضر التركيب والتنسيق ${memoNumber} إلى مستودع المنسقات.`,
-        createdBy: input.createdBy,
-      });
-      const pairedId = Number(paired[0].insertId);
-      await tx.insert(memoItems).values(input.items.map(item => ({
-        memoId: pairedId,
-        materialId: item.materialId,
-        quantity: String(item.quantity),
-        unitPrice: item.unitPrice === undefined ? null : String(item.unitPrice),
-        notes: `مادة مفكوكة من محضر ${memoNumber}`,
-      })));
-      await tx.update(memos).set({ relatedMemoId: pairedId }).where(eq(memos.id, memoId));
-    }
     await writeAdminAudit(tx, {
       actorId: input.createdBy,
       action: "memo_created",
@@ -4359,6 +4182,7 @@ export async function getMemoDetails(id: number) {
       id: memos.id,
       type: memos.type,
       memoNumber: memos.memoNumber,
+      sourceMemoNumber: memos.sourceMemoNumber,
       status: memos.status,
       warehouseId: memos.warehouseId,
       partyId: memos.partyId,
@@ -4394,20 +4218,7 @@ export async function getMemoDetails(id: number) {
     .from(memoItems)
     .innerJoin(materials, eq(memoItems.materialId, materials.id))
     .where(eq(memoItems.memoId, id));
-  const mergedItems = new Map<string, (typeof items)[number]>();
-  for (const item of items) {
-    const key = [item.materialId, item.unitPrice ?? "", item.notes ?? ""].join("|");
-    if (!mergedItems.has(key)) mergedItems.set(key, item);
-  }
-  return { ...header, items: Array.from(mergedItems.values()) };
-}
-
-export async function getMemoDetailsByNumber(memoNumber: string) {
-  const db = await getDb();
-  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const [row] = await db.select({ id: memos.id }).from(memos).where(eq(memos.memoNumber, memoNumber.trim())).limit(1);
-  if (!row) throw new Error("المذكرة غير موجودة.");
-  return getMemoDetails(row.id);
+  return { ...header, items };
 }
 
 export async function updateMemo(input: {
@@ -4436,12 +4247,6 @@ export async function updateMemo(input: {
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
   if (!input.items.length)
     throw new Error("أضف بند مادة واحدًا على الأقل إلى المذكرة.");
-  const normalizedItems = new Map<string, (typeof input.items)[number]>();
-  for (const item of input.items) {
-    const key = [item.materialId, item.unitPrice ?? "", item.notes?.trim() ?? ""].join("|");
-    if (!normalizedItems.has(key)) normalizedItems.set(key, item);
-  }
-  const itemsToSave = Array.from(normalizedItems.values());
   return db.transaction(async tx => {
     const [memo] = await tx
       .select({ id: memos.id, type: memos.type, status: memos.status })
@@ -4501,7 +4306,7 @@ export async function updateMemo(input: {
       .where(eq(memos.id, input.id));
     await tx.delete(memoItems).where(eq(memoItems.memoId, input.id));
     await tx.insert(memoItems).values(
-      itemsToSave.map(item => ({
+      input.items.map(item => ({
         memoId: input.id,
         materialId: item.materialId,
         quantity: String(item.quantity),
@@ -4515,7 +4320,7 @@ export async function updateMemo(input: {
       entityType: "memo",
       entityId: input.id,
       entityLabel: input.memoNumber.trim(),
-      details: `تعديل المذكرة: تحديث الرأس واستبدال ${itemsToSave.length} مادة.`,
+      details: `تعديل المذكرة: تحديث الرأس واستبدال ${input.items.length} مادة.`,
     });
     return { success: true as const, id: input.id };
   });
@@ -4599,18 +4404,11 @@ export async function approveMemo(id: number, approvedBy: number) {
     if (!memo) throw new Error("المذكرة غير موجودة.");
     if (memo.status === "approved")
       return { success: true as const, alreadyApproved: true };
-    if (memo.type === "inbound" && memo.relatedMemoId)
-      throw new Error("هذا قيد الإدخال التلقائي لمستودع المنسقات. اعتمد محضر التركيب الأساسي فقط.");
     const items = await tx
       .select()
       .from(memoItems)
       .where(eq(memoItems.memoId, id));
-    const mergedItems = new Map<string, (typeof items)[number]>();
     for (const item of items) {
-      const key = [item.materialId, item.unitPrice ?? "", item.notes ?? ""].join("|");
-      if (!mergedItems.has(key)) mergedItems.set(key, item);
-    }
-    for (const item of Array.from(mergedItems.values())) {
       const quantity = Number(item.quantity);
       const [balance] = await tx
         .select()
@@ -4659,22 +4457,6 @@ export async function approveMemo(id: number, approvedBy: number) {
         createdBy: approvedBy,
       });
     }
-    if (memo.type === "outbound" && memo.relatedMemoId) {
-      const [paired] = await tx.select().from(memos).where(eq(memos.id, memo.relatedMemoId)).limit(1);
-      if (!paired) throw new Error("محضر مستودع المنسقات المرتبط غير موجود.");
-      const pairedItems = await tx.select().from(memoItems).where(eq(memoItems.memoId, paired.id));
-      for (const item of pairedItems) {
-        const quantity = Number(item.quantity);
-        const [balance] = await tx.select().from(inventoryBalances).where(and(eq(inventoryBalances.materialId, item.materialId), eq(inventoryBalances.warehouseId, paired.warehouseId))).limit(1);
-        if (balance) {
-          await tx.update(inventoryBalances).set({ onHandQuantity: sql`${inventoryBalances.onHandQuantity} + ${quantity}` }).where(eq(inventoryBalances.id, balance.id));
-        } else {
-          await tx.insert(inventoryBalances).values({ materialId: item.materialId, warehouseId: paired.warehouseId, partyId: null, openingQuantity: "0", onHandQuantity: String(quantity), reservedQuantity: "0" });
-        }
-        await tx.insert(stockMovements).values({ materialId: item.materialId, warehouseId: paired.warehouseId, partyId: null, memoId: paired.id, memoItemId: item.id, movementType: "inbound", quantityIn: String(quantity), quantityOut: "0", occurredAt: paired.memoDate, createdBy: approvedBy });
-      }
-      await tx.update(memos).set({ status: "approved", approvedBy, approvedAt: new Date(), reviewedBy: approvedBy, reviewedAt: new Date() }).where(eq(memos.id, paired.id));
-    }
     await tx
       .update(memos)
       .set({
@@ -4708,35 +4490,28 @@ export async function listInventoryBalances(options?: {
   const db = await getDb();
   if (!db) return [];
   const limit = options?.limit ?? 10_000;
-  const term = options?.search?.trim().toLocaleLowerCase("en-US");
-  const materialRows = await db
+  const term = options?.search?.trim();
+  const materialSearch = term
+    ? or(
+        like(materials.code, `%${term}%`),
+        like(materials.name, `%${term}%`),
+        like(materials.barcode, `%${term}%`)
+      )
+    : undefined;
+  const pageMaterials = await db
     .select({
       id: materials.id,
       code: materials.code,
       name: materials.name,
       description: materials.description,
       unit: materials.unit,
-      barcode: materials.barcode,
       minimumStock: materials.minimumStock,
     })
     .from(materials)
+    .where(materialSearch)
     .orderBy(materials.code, materials.id)
     .limit(limit)
     .offset(options?.offset ?? 0);
-  const materialMatchesSearch = (material: (typeof materialRows)[number]) =>
-    [material.code, material.name, material.barcode].some(value =>
-      String(value ?? "")
-        .toLocaleLowerCase("en-US")
-        .includes(term ?? "")
-    );
-  const materialGroups = groupMaterialsByCode(materialRows)
-    .filter(group => !term || group.rows.some(materialMatchesSearch))
-    .sort(
-      (left, right) =>
-        left.canonical.code.localeCompare(right.canonical.code) ||
-        left.canonical.id - right.canonical.id
-    );
-  const pageMaterials = materialGroups.flatMap(group => group.rows);
   if (!pageMaterials.length) return [];
 
   const materialIds = pageMaterials.map(material => material.id);
@@ -4789,7 +4564,7 @@ export async function listInventoryBalances(options?: {
       .where(and(...openingMovementFilters)),
   ]);
 
-  const inventoryRows = pageMaterials
+  return pageMaterials
     .map(material => {
       const balances = balanceRows.filter(
         row => row.materialId === material.id
@@ -4880,13 +4655,10 @@ export async function listInventoryBalances(options?: {
         receiptQuantity: String(quantities.receipt),
         returnQuantity: String(quantities.returned),
         outboundQuantity: String(quantities.outbound),
-        materialIds: [material.id],
       };
       // الجرد السنوي يعرض كل مادة لها رصيد تاريخي متبقٍ حتى تاريخ النهاية، حتى لو لم تتحرك خلال السنة.
-    });
-  return mergeInventoryRowsByMaterialCode(inventoryRows).filter(
-    row => Number(row.onHandQuantity) > 0
-  );
+    })
+    .filter(row => Number(row.onHandQuantity) > 0);
 }
 
 export async function listInventoryBalancePage(options?: {
@@ -4910,25 +4682,97 @@ export async function listInventoryBalancePage(options?: {
   return { rows, hasMore: offset + rows.length < total, total };
 }
 
+export async function getMaterialWarehouseBalance(input: {
+  materialId: number;
+  warehouseId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const [[material], [warehouse], [balance]] = await Promise.all([
+    db
+      .select({
+        id: materials.id,
+        code: materials.code,
+        name: materials.name,
+        unit: materials.unit,
+      })
+      .from(materials)
+      .where(eq(materials.id, input.materialId))
+      .limit(1),
+    db
+      .select({ id: warehouses.id, name: warehouses.name })
+      .from(warehouses)
+      .where(eq(warehouses.id, input.warehouseId))
+      .limit(1),
+    db
+      .select({
+        quantity: sql<string>`coalesce(sum(${inventoryBalances.onHandQuantity}), 0)`,
+      })
+      .from(inventoryBalances)
+      .where(
+        and(
+          eq(inventoryBalances.materialId, input.materialId),
+          eq(inventoryBalances.warehouseId, input.warehouseId)
+        )
+      ),
+  ]);
+  if (!material || !warehouse) return null;
+  return {
+    materialId: material.id,
+    materialCode: material.code,
+    materialName: material.name,
+    unit: material.unit,
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.name,
+    quantity: String(balance?.quantity ?? "0"),
+  };
+}
+
+export async function getMaterialWarehouseCostEstimate(input: {
+  materialId: number;
+  warehouseId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  const [latestPurchase] = await db
+    .select({
+      unitPrice: memoItems.unitPrice,
+      memoNumber: memos.memoNumber,
+      memoDate: memos.memoDate,
+    })
+    .from(memoItems)
+    .innerJoin(memos, eq(memoItems.memoId, memos.id))
+    .where(
+      and(
+        eq(memoItems.materialId, input.materialId),
+        eq(memos.warehouseId, input.warehouseId),
+        eq(memos.type, "inbound"),
+        eq(memos.status, "approved"),
+        gt(memos.id, 0),
+        sql`${memoItems.unitPrice} IS NOT NULL`,
+        sql`(${memos.notes} IS NULL OR (${memos.notes} NOT LIKE '%إدخال مواد قديمة%' AND ${memos.notes} NOT LIKE '%إرجاع%' AND ${memos.notes} NOT LIKE '%مرتجع%'))`
+      )
+    )
+    .orderBy(desc(memos.memoDate), desc(memos.id), desc(memoItems.id))
+    .limit(1);
+  return latestPurchase ?? null;
+}
+
 export async function getMaterialCard(input: {
   materialId: number;
-  materialIds?: number[];
   warehouseId?: number;
   partyId?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const materialIds = Array.from(
-    new Set([input.materialId, ...(input.materialIds ?? [])])
-  );
   const hasLocationScope = input.warehouseId !== undefined;
   const scope = hasLocationScope
     ? and(
-        inArray(inventoryBalances.materialId, materialIds),
+        eq(inventoryBalances.materialId, input.materialId),
         eq(inventoryBalances.warehouseId, input.warehouseId!),
         sql`${inventoryBalances.partyId} <=> ${input.partyId ?? null}`
       )
-    : inArray(inventoryBalances.materialId, materialIds);
+    : eq(inventoryBalances.materialId, input.materialId);
   const balances = await db
     .select({
       id: inventoryBalances.id,
@@ -4950,29 +4794,24 @@ export async function getMaterialCard(input: {
   if (!material) throw new Error("لم يُعثر على المادة المحددة.");
   const movementFields = {
     memoNumber: memos.memoNumber,
-    memoType: memos.type,
-    memoNotes: memos.notes,
-    folderNumber: memos.folderNumber,
-    referenceNumber: memos.referenceNumber,
     memoDate: memos.memoDate,
     occurredAt: stockMovements.occurredAt,
     movementType: stockMovements.movementType,
     quantityIn: stockMovements.quantityIn,
     quantityOut: stockMovements.quantityOut,
     partyName: parties.name,
-    notes: memoItems.notes,
+    notes: memos.notes,
   };
   const movementBase = hasLocationScope
     ? [
-        inArray(stockMovements.materialId, materialIds),
+        eq(stockMovements.materialId, input.materialId),
         eq(stockMovements.warehouseId, input.warehouseId!),
       ]
-    : [inArray(stockMovements.materialId, materialIds)];
+    : [eq(stockMovements.materialId, input.materialId)];
   const scopedMovements = await db
     .select(movementFields)
     .from(stockMovements)
     .leftJoin(memos, eq(stockMovements.memoId, memos.id))
-    .leftJoin(memoItems, eq(stockMovements.memoItemId, memoItems.id))
     .leftJoin(parties, eq(stockMovements.partyId, parties.id))
     .where(
       hasLocationScope
@@ -4984,7 +4823,16 @@ export async function getMaterialCard(input: {
     )
     .orderBy(stockMovements.occurredAt, stockMovements.id);
   // بعض الأرصدة التاريخية لا تحمل الجهة نفسها الموجودة على حركة المذكرة؛ لا نترك بطاقة المادة فارغة عند وجود حركات صحيحة للمادة والمستودع.
-  const movements = scopedMovements;
+  const movements =
+    scopedMovements.length > 0
+      ? scopedMovements
+      : await db
+          .select(movementFields)
+          .from(stockMovements)
+          .leftJoin(memos, eq(stockMovements.memoId, memos.id))
+          .leftJoin(parties, eq(stockMovements.partyId, parties.id))
+          .where(and(...movementBase))
+          .orderBy(stockMovements.occurredAt, stockMovements.id);
   return {
     cardNumber: hasLocationScope ? (balances[0]?.id ?? null) : null,
     openingQuantity: String(
@@ -4996,67 +4844,6 @@ export async function getMaterialCard(input: {
     ...material,
     movements,
   };
-}
-
-export async function getMaterialWarehouseBalance(input: {
-  materialId?: number;
-  warehouseId?: number;
-  allowedWarehouseIds?: number[] | null;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const warehouseScope = input.allowedWarehouseIds?.length
-    ? inArray(inventoryBalances.warehouseId, input.allowedWarehouseIds)
-    : undefined;
-  const movementWarehouseScope = input.allowedWarehouseIds?.length
-    ? inArray(stockMovements.warehouseId, input.allowedWarehouseIds)
-    : undefined;
-  const balanceConditions = [
-    input.materialId ? eq(inventoryBalances.materialId, input.materialId) : undefined,
-    input.warehouseId ? eq(inventoryBalances.warehouseId, input.warehouseId) : undefined,
-    warehouseScope,
-  ].filter(Boolean) as ReturnType<typeof eq>[];
-  const movementConditions = [
-    input.materialId ? eq(stockMovements.materialId, input.materialId) : undefined,
-    input.warehouseId ? eq(stockMovements.warehouseId, input.warehouseId) : undefined,
-    movementWarehouseScope,
-  ].filter(Boolean) as ReturnType<typeof eq>[];
-  const [[balance], [movementTotals]] = await Promise.all([
-    db.select({ quantity: sql<string>`coalesce(sum(${inventoryBalances.onHandQuantity}), 0)`, rows: count() })
-      .from(inventoryBalances).where(balanceConditions.length ? and(...balanceConditions) : undefined),
-    db.select({
-      quantityIn: sql<string>`coalesce(sum(${stockMovements.quantityIn}), 0)`,
-      quantityOut: sql<string>`coalesce(sum(${stockMovements.quantityOut}), 0)`,
-    })
-      .from(stockMovements)
-      .where(movementConditions.length ? and(...movementConditions) : undefined),
-  ]);
-  const storedQuantity = Number(balance?.quantity ?? 0);
-  const movementQuantity = Number(movementTotals?.quantityIn ?? 0) - Number(movementTotals?.quantityOut ?? 0);
-  const quantity = balance?.rows && balance.rows > 0 && (storedQuantity !== 0 || movementQuantity === 0)
-    ? storedQuantity
-    : movementQuantity;
-  return {
-    materialId: input.materialId ?? null,
-    materialCode: null,
-    materialName: input.materialId ? "المادة المحددة" : "كل المواد",
-    unit: "إجمالي",
-    warehouseId: input.warehouseId ?? null,
-    warehouseName: input.warehouseId ? "المستودع المحدد" : "كل المستودعات",
-    quantity: String(quantity),
-  };
-}
-
-export async function getMaterialWarehouseCostEstimate(input: { materialId: number; warehouseId: number }) {
-  const db = await getDb();
-  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const [row] = await db.select({ unitPrice: memoItems.unitPrice, memoNumber: memos.memoNumber, memoDate: memos.memoDate })
-    .from(memoItems)
-    .innerJoin(memos, eq(memoItems.memoId, memos.id))
-    .where(and(eq(memoItems.materialId, input.materialId), eq(memos.warehouseId, input.warehouseId), eq(memos.type, "inbound"), eq(memos.status, "approved"), sql`${memoItems.unitPrice} is not null`))
-    .orderBy(desc(memos.memoDate), desc(memoItems.id))
-    .limit(1);
-  return row ? { ...row, unitPrice: String(row.unitPrice) } : null;
 }
 
 export const dbSql = sql;
@@ -5133,29 +4920,4 @@ export async function listFinanceReconciliationSummary(warehouseIds?: number[] |
     .leftJoin(financialEntries, eq(memoReconciliations.financialEntryId, financialEntries.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(memoReconciliations.matchedAt), desc(memoReconciliations.id));
-}
-
-export async function listCoordinationIncoming(warehouseIds?: number[] | null) {
-  const db = await getDb();
-  if (!db) return [];
-  const rows = await db.select({
-    id: memos.id,
-    memoNumber: memos.memoNumber,
-    memoDate: memos.memoDate,
-    status: memos.status,
-    warehouseId: memos.warehouseId,
-    warehouseName: warehouses.name,
-    relatedMemoId: memos.relatedMemoId,
-    notes: memos.notes,
-  }).from(memos).innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
-    .where(and(eq(memos.type, "inbound"), eq(warehouses.name, "مستودع المنسقات"), like(memos.notes, "إدخال تلقائي للمواد القديمة%")))
-    .orderBy(desc(memos.memoDate), desc(memos.id));
-  if (!rows.length) return [];
-  const sourceIds = rows.map(row => row.relatedMemoId).filter((id): id is number => Boolean(id));
-  const sources = sourceIds.length ? await db.select({ id: memos.id, memoNumber: memos.memoNumber, warehouseId: memos.warehouseId, warehouseName: warehouses.name }).from(memos).innerJoin(warehouses, eq(memos.warehouseId, warehouses.id)).where(inArray(memos.id, sourceIds)) : [];
-  const sourceById = new Map(sources.map(row => [row.id, row]));
-  return rows.filter(row => {
-    const source = row.relatedMemoId ? sourceById.get(row.relatedMemoId) : undefined;
-    return source && (warehouseIds === null || warehouseIds === undefined || warehouseIds.includes(source.warehouseId));
-  }).map(row => ({ ...row, source: row.relatedMemoId ? sourceById.get(row.relatedMemoId) ?? null : null }));
 }

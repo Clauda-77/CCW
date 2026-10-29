@@ -4950,6 +4950,10 @@ export async function getMaterialCard(input: {
   if (!material) throw new Error("لم يُعثر على المادة المحددة.");
   const movementFields = {
     memoNumber: memos.memoNumber,
+    memoType: memos.type,
+    memoNotes: memos.notes,
+    folderNumber: memos.folderNumber,
+    referenceNumber: memos.referenceNumber,
     memoDate: memos.memoDate,
     occurredAt: stockMovements.occurredAt,
     movementType: stockMovements.movementType,

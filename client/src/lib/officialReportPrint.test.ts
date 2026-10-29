@@ -178,4 +178,19 @@ describe("النماذج المالية الرسمية", () => {
       expect(write.mock.calls[0]?.[0]).not.toContain(">—<");
     });
   });
+
+  it("يعرض رقم مستند بطاقة المادة باتجاه يسار إلى يمين", () => {
+    const write = vi.fn();
+    const page = { document: { write, close: vi.fn() } } as unknown as Window;
+    renderOfficialReport(page, {
+      title: "بطاقة المادة",
+      dateRange: "",
+      type: "materialCard",
+      rows: [[1, "مذكرة استلام", "12 / FIN-45", "", 1, "", 1, "", "مورد", ""]],
+    });
+
+    expect(write.mock.calls[0]?.[0]).toContain(
+      '<bdi dir="ltr" style="unicode-bidi:isolate">12 / FIN-45</bdi>'
+    );
+  });
 });

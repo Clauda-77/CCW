@@ -31,4 +31,100 @@ describe("بطاقة المادة", () => {
     expect(rows.map(row => row[2])).toEqual(["استلام-1", "تسليم-2"]);
     expect(rows.map(row => row[6])).toEqual([10, 3]);
   });
+
+  it("يحافظ على الترتيب الزمني إذا كان الإدخال والتسليم بتاريخين مختلفين", () => {
+    const rows = buildMaterialCardRows([
+      { memoNumber: "إدخال-13", memoDate: "2026-04-13", occurredAt: "2026-04-13T08:00:00", movementType: "inbound", quantityIn: "5", quantityOut: "0", partyName: "مورد", notes: null },
+      { memoNumber: "تسليم-12", memoDate: "2026-04-12", occurredAt: "2026-04-12T23:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "3", partyName: "جهة", notes: null },
+    ], "10");
+
+    expect(rows.map(row => row[2])).toEqual(["تسليم-12", "إدخال-13"]);
+    expect(rows.map(row => row[6])).toEqual([7, 12]);
+  });
+
+  it("لا يفرض أولوية الإدخال على أنواع الحركات الأخرى في اليوم نفسه", () => {
+    const rows = buildMaterialCardRows([
+      { memoNumber: "تسليم-صباحاً", memoDate: "2026-04-12", occurredAt: "2026-04-12T08:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "2", partyName: "جهة", notes: null },
+      { memoNumber: "تسوية-مساءً", memoDate: "2026-04-12", occurredAt: "2026-04-12T17:00:00", movementType: "adjustment", quantityIn: "1", quantityOut: "0", partyName: "", notes: null },
+    ], "10");
+
+    expect(rows.map(row => row[2])).toEqual(["تسليم-صباحاً", "تسوية-مساءً"]);
+    expect(rows.map(row => row[6])).toEqual([8, 9]);
+  });
+
+  it("يعرض رقم المجلد مع الرقم المالي للاستلام والتركيب والتنسيق", () => {
+    const receipt = buildMaterialCardRows([
+      {
+        memoNumber: "SER-1",
+        memoType: "inbound",
+        memoNotes: "استلام مواد جديدة",
+        folderNumber: "12",
+        referenceNumber: "FIN-45",
+        memoDate: "2026-05-01",
+        occurredAt: "2026-05-01",
+        movementType: "inbound",
+        quantityIn: "1",
+        quantityOut: "0",
+        partyName: "مورد",
+        notes: null,
+      },
+    ], 0);
+    const transfer = buildMaterialCardRows([
+      {
+        memoNumber: "SER-2",
+        memoType: "outbound",
+        memoNotes: "محضر تركيب وتنسيق",
+        folderNumber: "13",
+        referenceNumber: "FIN-46",
+        memoDate: "2026-05-02",
+        occurredAt: "2026-05-02",
+        movementType: "outbound",
+        quantityIn: "0",
+        quantityOut: "1",
+        partyName: "جهة",
+        notes: null,
+      },
+    ], 0);
+
+    expect(receipt[0]?.[2]).toBe("12 / FIN-45");
+    expect(transfer[0]?.[2]).toBe("13 / FIN-46");
+  });
+
+  it("يعرض رقم المجلد مع الرقم المتسلسل للتسليم والإدخال", () => {
+    const delivery = buildMaterialCardRows([
+      {
+        memoNumber: "SER-3",
+        memoType: "outbound",
+        memoNotes: "تسليم مواد",
+        folderNumber: "14",
+        referenceNumber: "FIN-47",
+        memoDate: "2026-05-03",
+        occurredAt: "2026-05-03",
+        movementType: "outbound",
+        quantityIn: "0",
+        quantityOut: "1",
+        partyName: "جهة",
+        notes: null,
+      },
+    ], 0);
+    const entry = buildMaterialCardRows([
+      {
+        memoNumber: "SER-4",
+        memoType: "inbound",
+        memoNotes: "إدخال مواد قديمة",
+        folderNumber: "15",
+        referenceNumber: "FIN-48",
+        memoDate: "2026-05-04",
+        occurredAt: "2026-05-04",
+        movementType: "inbound",
+        quantityIn: "1",
+        quantityOut: "0",
+        partyName: "جهة",
+        notes: null,
+      },
+    ], 0);
+
+    expect(delivery[0]?.[2]).toBe("14 / SER-3");
+    expect(entry[0]?.[2]).toBe("15 / SER-4");
+  });
 });

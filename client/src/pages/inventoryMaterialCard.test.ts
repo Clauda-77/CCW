@@ -127,6 +127,9 @@ describe("بطاقة المادة من شاشة حركة المخزون", () => 
 
   it("يطبع المادة الموحدة مع حركات جميع الجهات ويحتفظ بالنطاق المحدد عند طلبه", () => {
     expect(dbSource).toContain("const scopedMovements = await db\n    .select(movementFields)");
+    expect(dbSource).toContain("memoType: memos.type");
+    expect(dbSource).toContain("folderNumber: memos.folderNumber");
+    expect(dbSource).toContain("referenceNumber: memos.referenceNumber");
     expect(dbSource).toContain("const hasLocationScope = input.warehouseId !== undefined");
     expect(dbSource).toContain("hasLocationScope\n        ? and(");
     expect(dbSource).toContain("const [material] = await db\n    .select({");

@@ -358,7 +358,13 @@ function reportPreviewBodyHtml(report: OfficialReport) {
     // الجرد يجب أن يعرض كل مواد المستودع، حتى عندما تكون الكميات صفرًا.
     // لا نرشح الصفوف هنا لأن الصفر قيمة صحيحة وليست سببًا لإخفاء المادة.
     const reportRows = pageReport.rows;
-    const rows = reportRows.map(row => `<tr>${row.map(value => `<td>${pageReport.type === "inventory" && (value === 0 || String(value).trim() === "0") ? "" : reportCell(value)}</td>`).join("")}</tr>`).join("");
+    const rows = reportRows.map(row => `<tr>${row.map((value, index) => {
+      const cell = pageReport.type === "inventory" && (value === 0 || String(value).trim() === "0") ? "" : reportCell(value);
+      const content = pageReport.type === "materialCard" && index === 2
+        ? `<bdi dir="ltr" style="unicode-bidi:isolate">${cell}</bdi>`
+        : cell;
+      return `<td>${content}</td>`;
+    }).join("")}</tr>`).join("");
     return `<main class="report-page${pageReport.type === "inventory" ? " inventory-report" : pageReport.type === "materialCard" ? " material-card-report" : ""}">${header(pageReport)}<table class="official-table"><thead>${tableHead(pageReport.type)}</thead><tbody>${rows || `<tr><td colspan="${columnCount}">&nbsp;</td></tr>`}</tbody></table>${footer(pageReport.type)}</main>`;
   }).join("");
   return `<header class="preview-toolbar"><div><strong>معاينة قبل الطباعة — ${esc(meta.officialTitle)}</strong><span>${report.pages?.length ? `النسخة الكاملة — ${report.pages.length.toLocaleString("ar")} صفحة جاهزة للطباعة.` : "راجع نموذج الطباعة ثم اضغط «إرسال إلى الطابعة»."}</span></div><div class="preview-actions">${paging}<button id="close-preview" data-preview-action="close" type="button">إغلاق</button><button id="download-pdf" data-preview-action="print-all" data-report-session="${sessionId}" data-pages-ready="${pagesReady}" class="pdf-now" type="button">تنزيل PDF</button><button id="print-now" data-preview-action="print-all" data-report-session="${sessionId}" data-pages-ready="${pagesReady}" class="print-now" type="button">إرسال إلى الطابعة</button></div></header>${printablePages}`;

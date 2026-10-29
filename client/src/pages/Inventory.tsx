@@ -1970,7 +1970,7 @@ type InventoryRow = {
   outboundQuantity: string;
   warehouseName: string;
   partyName: string | null;
-  materialIds: number[];
+  materialIds?: number[];
 };
 type ReportSession = {
   id: string;

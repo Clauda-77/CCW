@@ -18,7 +18,7 @@ function createContext(role: AuthenticatedUser["role"]): TrpcContext {
       lastSignedIn: new Date(),
     },
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
-    res: { clearCookie: () => undefined } as TrpcContext["res"],
+    res: { clearCookie: () => undefined } as unknown as TrpcContext["res"],
   };
 }
 

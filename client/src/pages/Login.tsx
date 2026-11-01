@@ -30,25 +30,34 @@ const roleLabels: Record<string, string> = {
 export default function LoginPage() {
   const { isAuthenticated, user } = useAuth();
   const [, setLocation] = useLocation();
-  const [localPassword, setLocalPassword] = useState("");
-  const [localUserId, setLocalUserId] = useState("");
-  const [localWarehouseId, setLocalWarehouseId] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [warehouseId, setWarehouseId] = useState("");
+  const [devPassword, setDevPassword] = useState("");
+  const [devUserId, setDevUserId] = useState("");
+  const [devWarehouseId, setDevWarehouseId] = useState("");
   const isLocalDev = import.meta.env.DEV;
   const utils = trpc.useUtils();
   const localUsers = trpc.users.previewList.useQuery(undefined, {
     enabled: isLocalDev,
   });
-  const localWarehouses = trpc.auth.loginWarehouses.useQuery(undefined, {
-    enabled: isLocalDev,
-  });
+  const localWarehouses = trpc.auth.loginWarehouses.useQuery();
   const selectedLocalUser = (localUsers.data ?? []).find(
-    entry => entry.id === Number(localUserId)
+    entry => entry.id === Number(devUserId)
   );
   const availableWarehouses = (localWarehouses.data ?? []).filter(
     warehouse =>
-      !selectedLocalUser?.warehouseId ||
-      warehouse.id === selectedLocalUser.warehouseId
+      selectedLocalUser?.role === "admin" ||
+      (selectedLocalUser?.warehouseIds ?? []).includes(warehouse.id)
   );
+  const passwordLogin = trpc.auth.passwordLogin.useMutation({
+    onSuccess: async () => {
+      await utils.auth.me.invalidate();
+      toast.success("تم تسجيل الدخول.");
+      setLocation("/");
+    },
+    onError: error => toast.error(error.message || "تعذر تسجيل الدخول."),
+  });
   const localLogin = trpc.auth.localLogin.useMutation({
     onSuccess: async () => {
       await utils.auth.me.invalidate();
@@ -135,8 +144,8 @@ export default function LoginPage() {
                   </div>
                 </div>
                 <p className="mt-6 text-sm leading-7 text-[#52738c]">
-                  اختر المستخدم والمستودع، ثم أدخل كلمة المرور للوصول إلى
-                  النظام.
+                  أدخل اسم المستخدم وكلمة المرور، ثم اختر أحد المستودعات المسندة
+                  إلى حسابك.
                 </p>
                 {isAuthenticated ? (
                   <div className="mt-7 border border-[#9fd2e9] bg-[#ecfaff] p-4 text-sm text-[#17698a]">
@@ -146,104 +155,152 @@ export default function LoginPage() {
                     </div>
                     <p className="mt-1">الجلسة الحالية مفعّلة.</p>
                   </div>
-                ) : isLocalDev ? (
-                  <form
-                    className="mt-5 space-y-2 border-t border-[#d3e6f2] pt-5"
-                    onSubmit={event => {
-                      event.preventDefault();
-                      localLogin.mutate({
-                        userId: Number(localUserId),
-                        password: localPassword,
-                        warehouseId: Number(localWarehouseId),
-                      });
-                    }}
-                  >
-                    <p className="text-xs font-bold text-[#52738c]">
-                      تسجيل الدخول
-                    </p>
-                    <select
-                      value={localUserId}
-                      onChange={event => {
-                        const nextUserId = event.target.value;
-                        const nextUser = (localUsers.data ?? []).find(
-                          entry => entry.id === Number(nextUserId)
-                        );
-                        setLocalUserId(nextUserId);
-                        setLocalWarehouseId(
-                          nextUser?.warehouseId
-                            ? String(nextUser.warehouseId)
-                            : ""
-                        );
-                      }}
-                      aria-label="المستخدم"
-                      className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61] outline-none focus:ring-2 focus:ring-[#87c9e9]"
-                    >
-                      <option value="">اختر المستخدم</option>
-                      {(localUsers.data ?? []).map(entry => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.name ||
-                            entry.email ||
-                            `مستخدم رقم ${entry.id}`}{" "}
-                          — {roleLabels[entry.role] ?? entry.role}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={localWarehouseId}
-                      onChange={event =>
-                        setLocalWarehouseId(event.target.value)
-                      }
-                      aria-label="المستودع"
-                      required
-                      disabled={
-                        !localUserId || Boolean(selectedLocalUser?.warehouseId)
-                      }
-                      className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61] outline-none focus:ring-2 focus:ring-[#87c9e9]"
-                    >
-                      <option value="">اختر المستودع</option>
-                      {availableWarehouses.map(warehouse => (
-                        <option key={warehouse.id} value={warehouse.id}>
-                          {warehouse.name} — {warehouse.code}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedLocalUser?.warehouseId ? (
-                      <p className="text-xs text-[#17698a]">
-                        هذا الحساب مخصص للمستودع المحدد أعلاه.
-                      </p>
-                    ) : null}
-                    <Input
-                      type="password"
-                      value={localPassword}
-                      onChange={event => setLocalPassword(event.target.value)}
-                      placeholder="كلمة المرور"
-                      aria-label="كلمة المرور"
-                    />
-                    <Button
-                      type="submit"
-                      disabled={
-                        localLogin.isPending ||
-                        !localPassword ||
-                        !localUserId ||
-                        !localWarehouseId
-                      }
-                      variant="outline"
-                      className="h-10 w-full rounded-sm border-[#0874bc] text-[#0874bc]"
-                    >
-                      {localLogin.isPending
-                        ? "جارٍ تسجيل الدخول…"
-                        : "تسجيل الدخول"}
-                    </Button>
-                  </form>
                 ) : (
-                  <div className="mt-5 border border-[#efc7c1] bg-[#fff7f5] p-3 text-sm text-[#a04d42]">
-                    تسجيل الدخول متاح عند تشغيل التطبيق في بيئة التطوير فقط.
-                  </div>
+                  <>
+                    <form
+                      className="mt-5 space-y-3 border-t border-[#d3e6f2] pt-5"
+                      onSubmit={event => {
+                        event.preventDefault();
+                        passwordLogin.mutate({
+                          username,
+                          password,
+                          warehouseId: Number(warehouseId),
+                        });
+                      }}
+                    >
+                      <Input
+                        value={username}
+                        onChange={event => setUsername(event.target.value)}
+                        placeholder="اسم المستخدم"
+                        aria-label="اسم المستخدم"
+                        autoComplete="username"
+                        required
+                        minLength={3}
+                        maxLength={64}
+                      />
+                      <Input
+                        type="password"
+                        value={password}
+                        onChange={event => setPassword(event.target.value)}
+                        placeholder="كلمة المرور"
+                        aria-label="كلمة المرور"
+                        autoComplete="current-password"
+                        required
+                      />
+                      <select
+                        value={warehouseId}
+                        onChange={event => setWarehouseId(event.target.value)}
+                        aria-label="المستودع"
+                        required
+                        disabled={localWarehouses.isLoading}
+                        className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61] outline-none focus:ring-2 focus:ring-[#87c9e9]"
+                      >
+                        <option value="">
+                          {localWarehouses.isLoading
+                            ? "جار تحميل المستودعات…"
+                            : "اختر المستودع"}
+                        </option>
+                        {(localWarehouses.data ?? []).map(warehouse => (
+                          <option key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name} — {warehouse.code}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        type="submit"
+                        disabled={
+                          passwordLogin.isPending ||
+                          !username.trim() ||
+                          !password ||
+                          !warehouseId ||
+                          localWarehouses.isLoading
+                        }
+                        className="h-10 w-full rounded-sm bg-[#0874bc] text-white hover:bg-[#075f9a]"
+                      >
+                        {passwordLogin.isPending
+                          ? "جارٍ تسجيل الدخول…"
+                          : "تسجيل الدخول"}
+                      </Button>
+                    </form>
+                    {isLocalDev && (
+                      <details className="mt-5 border-t border-dashed border-[#b9d8e8] pt-4">
+                        <summary className="cursor-pointer text-xs font-bold text-[#52738c]">
+                          دخول التطوير القديم (للتهيئة الأولية فقط)
+                        </summary>
+                        <form
+                          className="mt-3 space-y-2"
+                          onSubmit={event => {
+                            event.preventDefault();
+                            localLogin.mutate({
+                              userId: Number(devUserId),
+                              password: devPassword,
+                              warehouseId: Number(devWarehouseId),
+                            });
+                          }}
+                        >
+                          <select
+                            value={devUserId}
+                            onChange={event => {
+                              const nextUserId = event.target.value;
+                              const nextUser = (localUsers.data ?? []).find(
+                                entry => entry.id === Number(nextUserId)
+                              );
+                              setDevUserId(nextUserId);
+                              setDevWarehouseId(
+                                nextUser?.warehouseIds?.[0]
+                                  ? String(nextUser.warehouseIds[0])
+                                  : ""
+                              );
+                            }}
+                            aria-label="المستخدم القديم"
+                            className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61]"
+                          >
+                            <option value="">اختر المستخدم</option>
+                            {(localUsers.data ?? []).map(entry => (
+                              <option key={entry.id} value={entry.id}>
+                                {entry.name || entry.email || `مستخدم رقم ${entry.id}`} — {roleLabels[entry.role] ?? entry.role}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={devWarehouseId}
+                            onChange={event => setDevWarehouseId(event.target.value)}
+                            aria-label="مستودع المستخدم القديم"
+                            required
+                            disabled={!devUserId || availableWarehouses.length <= 1}
+                            className="h-10 w-full rounded-md border border-[#b9d8e8] bg-white px-3 text-sm text-[#173c61]"
+                          >
+                            <option value="">اختر المستودع</option>
+                            {availableWarehouses.map(warehouse => (
+                              <option key={warehouse.id} value={warehouse.id}>
+                                {warehouse.name} — {warehouse.code}
+                              </option>
+                            ))}
+                          </select>
+                          <Input
+                            type="password"
+                            value={devPassword}
+                            onChange={event => setDevPassword(event.target.value)}
+                            placeholder="كلمة مرور التطوير المشتركة"
+                            aria-label="كلمة مرور التطوير"
+                          />
+                          <Button
+                            type="submit"
+                            disabled={localLogin.isPending || !devPassword || !devUserId || !devWarehouseId}
+                            variant="outline"
+                            className="h-10 w-full rounded-sm border-[#0874bc] text-[#0874bc]"
+                          >
+                            {localLogin.isPending ? "جارٍ تسجيل الدخول…" : "الدخول المؤقت"}
+                          </Button>
+                        </form>
+                      </details>
+                    )}
+                  </>
                 )}
                 <div className="mt-6 border-t border-[#d3e6f2] pt-5">
                   <div className="flex items-start gap-2 text-xs leading-6 text-[#63849d]">
                     <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-[#1176a8]" />
-                    لا يتم إنشاء حساب موازٍ أو تخزين كلمة مرور داخل التطبيق.
+                    تُخزّن كلمات المرور بصورة مجزأة، ولا تُحفظ كنص صريح.
                   </div>
                 </div>
                 <button

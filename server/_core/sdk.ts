@@ -29,6 +29,7 @@ export type SessionPayload = {
   name: string;
   warehouseId?: number | null;
   warehouseName?: string | null;
+  authVersion?: number;
 };
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
@@ -177,6 +178,7 @@ class SDKServer {
       name?: string;
       warehouseId?: number | null;
       warehouseName?: string | null;
+      authVersion?: number;
     } = {}
   ): Promise<string> {
     return this.signSession(
@@ -186,6 +188,7 @@ class SDKServer {
         name: options.name || "",
         warehouseId: options.warehouseId ?? null,
         warehouseName: options.warehouseName ?? null,
+        authVersion: options.authVersion ?? 0,
       },
       options
     );
@@ -206,6 +209,7 @@ class SDKServer {
       name: payload.name,
       warehouseId: payload.warehouseId ?? null,
       warehouseName: payload.warehouseName ?? null,
+      authVersion: payload.authVersion ?? 0,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -218,6 +222,7 @@ class SDKServer {
     name: string;
     warehouseId?: number | null;
     warehouseName?: string | null;
+    authVersion: number;
   } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
@@ -229,7 +234,7 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, appId, name, warehouseId, warehouseName } =
+      const { openId, appId, name, warehouseId, warehouseName, authVersion } =
         payload as Record<string, unknown>;
 
       if (
@@ -247,6 +252,7 @@ class SDKServer {
         name,
         warehouseId: typeof warehouseId === "number" ? warehouseId : null,
         warehouseName: typeof warehouseName === "string" ? warehouseName : null,
+        authVersion: typeof authVersion === "number" ? authVersion : 0,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -339,11 +345,20 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    if (session.authVersion !== user.authVersion) {
+      throw ForbiddenError("انتهت صلاحية الجلسة بعد تغيير بيانات الدخول. سجّل الدخول مجددًا.");
+    }
+
     // المستخدم موجود مسبقاً: حدّث وقت الدخول فقط ولا تنفّذ INSERT/UPSERT.
     await db.touchUserLastSignedIn(user.openId);
+    const {
+      authVersion: _authVersion,
+      username: _username,
+      ...safeUser
+    } = user;
 
     return {
-      ...user,
+      ...safeUser,
       warehouseId: session.warehouseId ?? null,
       warehouseName: session.warehouseName ?? null,
     };
@@ -353,7 +368,10 @@ class SDKServer {
 const CRON_OPEN_ID_PREFIX = "cron_";
 
 /** Result of `sdk.authenticateRequest`. Cron callbacks set `isCron=true` and `taskUid`; see `/home/ubuntu/skills/webdev-periodic-updates/SKILL.md`. */
-export type AuthenticatedUser = User & {
+export type AuthenticatedUser = Omit<
+  User,
+  "passwordHash" | "authVersion" | "username"
+> & {
   warehouseId?: number | null;
   warehouseName?: string | null;
   taskUid?: string;

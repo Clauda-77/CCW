@@ -32,6 +32,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { groupMaterialsByCode } from "./materialIdentity";
+import { hashLocalPassword, isValidUsername, normalizeUsername } from "./localAuth";
 import { assertRoleChangeAllowed } from "./userRoles";
 let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
@@ -93,7 +94,19 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db
-    .select()
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      email: users.email,
+      username: users.username,
+      authVersion: users.authVersion,
+      loginMethod: users.loginMethod,
+      role: users.role,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+      lastSignedIn: users.lastSignedIn,
+    })
     .from(users)
     .where(eq(users.openId, openId))
     .limit(1);
@@ -113,8 +126,43 @@ export async function touchUserLastSignedIn(openId: string) {
 export async function getUserById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  const result = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      email: users.email,
+      username: users.username,
+      authVersion: users.authVersion,
+      loginMethod: users.loginMethod,
+      role: users.role,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+      lastSignedIn: users.lastSignedIn,
+    })
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
   return result[0];
+}
+
+export async function getUserCredentialByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [result] = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      role: users.role,
+      username: users.username,
+      passwordHash: users.passwordHash,
+      authVersion: users.authVersion,
+    })
+    .from(users)
+    .where(eq(users.username, normalizeUsername(username)))
+    .limit(1);
+  return result;
 }
 
 export async function getWarehouseById(id: number) {
@@ -136,24 +184,49 @@ export async function getWarehouseById(id: number) {
 export async function listUsers() {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const userRows = await db
     .select({
       id: users.id,
       name: users.name,
       email: users.email,
+      username: users.username,
+      hasLocalPassword: sql<boolean>`${users.passwordHash} IS NOT NULL`,
       loginMethod: users.loginMethod,
       role: users.role,
-      warehouseId: sql<number | null>`(select \`uw\`.\`warehouseId\` from \`userwarehouses\` as \`uw\` where \`uw\`.\`userId\` = \`users\`.\`id\` order by \`uw\`.\`id\` desc limit 1)`.as(
-        "warehouseId"
-      ),
-      warehouseName: sql<string | null>`(select \`w\`.\`name\` from \`userwarehouses\` as \`uw\` inner join \`warehouses\` as \`w\` on \`w\`.\`id\` = \`uw\`.\`warehouseId\` where \`uw\`.\`userId\` = \`users\`.\`id\` order by \`uw\`.\`id\` desc limit 1)`.as(
-        "warehouseName"
-      ),
       createdAt: users.createdAt,
       lastSignedIn: users.lastSignedIn,
     })
     .from(users)
     .orderBy(desc(users.lastSignedIn), desc(users.id));
+  const assignments = await db
+    .select({
+      userId: userWarehouses.userId,
+      warehouseId: warehouses.id,
+      warehouseName: warehouses.name,
+      isActive: warehouses.isActive,
+    })
+    .from(userWarehouses)
+    .innerJoin(warehouses, eq(userWarehouses.warehouseId, warehouses.id))
+    .orderBy(warehouses.name);
+  const byUser = new Map<number, typeof assignments>();
+  for (const assignment of assignments) {
+    const userAssignments = byUser.get(assignment.userId) ?? [];
+    userAssignments.push(assignment);
+    byUser.set(assignment.userId, userAssignments);
+  }
+  return userRows.map(row => {
+    const userAssignments = byUser.get(row.id) ?? [];
+    const lastAssignment = userAssignments[userAssignments.length - 1];
+    return {
+      ...row,
+      warehouseIds: userAssignments.map(assignment => assignment.warehouseId),
+      warehouseNames: userAssignments.map(assignment =>
+        assignment.isActive ? assignment.warehouseName : `${assignment.warehouseName} (غير نشط)`
+      ),
+      warehouseId: lastAssignment?.warehouseId ?? null,
+      warehouseName: userAssignments.map(assignment => assignment.warehouseName).join("، ") || null,
+    };
+  });
 }
 
 export async function listUserWarehouses(userId: number) {
@@ -168,22 +241,39 @@ export async function listUserWarehouses(userId: number) {
     })
     .from(userWarehouses)
     .innerJoin(warehouses, eq(userWarehouses.warehouseId, warehouses.id))
-    .where(eq(userWarehouses.userId, userId))
+    .where(and(eq(userWarehouses.userId, userId), eq(warehouses.isActive, true)))
     .orderBy(warehouses.name);
 }
 
 export async function createLocalUser(input: {
   name: string;
   email?: string;
+  username: string;
+  password: string;
   role: import("../drizzle/schema").WarehouseRole;
-  warehouseId: number;
+  warehouseIds: number[];
   actorId: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const warehouse = await getWarehouseById(input.warehouseId);
-  if (!warehouse || !warehouse.isActive)
-    throw new Error("المستودع المحدد غير موجود أو غير نشط.");
+  if (!isValidUsername(input.username))
+    throw new Error("اسم المستخدم يجب أن يكون 3–64 محرفًا من الحروف والأرقام و(. _ -) دون مسافات.");
+  const username = normalizeUsername(input.username);
+  const warehouseIds = Array.from(new Set(input.warehouseIds));
+  if (input.role !== "admin" && warehouseIds.length === 0)
+    throw new Error("يجب إسناد مستودع واحد على الأقل لهذا الدور.");
+  const assignedWarehouses = warehouseIds.length
+    ? await db
+        .select({ id: warehouses.id, name: warehouses.name, isActive: warehouses.isActive })
+        .from(warehouses)
+        .where(inArray(warehouses.id, warehouseIds))
+    : [];
+  if (
+    assignedWarehouses.length !== warehouseIds.length ||
+    assignedWarehouses.some(warehouse => !warehouse.isActive)
+  ) {
+    throw new Error("يوجد مستودع غير موجود أو غير نشط ضمن الاختيارات.");
+  }
   const normalizedEmail = input.email?.trim() || null;
   if (normalizedEmail) {
     const [existing] = await db
@@ -193,31 +283,174 @@ export async function createLocalUser(input: {
       .limit(1);
     if (existing) throw new Error("يوجد مستخدم بهذا البريد الإلكتروني.");
   }
+  const [existingUsername] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+  if (existingUsername) throw new Error("اسم المستخدم مستخدم مسبقًا.");
+  const passwordHash = await hashLocalPassword(input.password);
   return db.transaction(async tx => {
     const result = await tx.insert(users).values({
       openId: `local-${randomUUID()}`,
       name: input.name.trim(),
       email: normalizedEmail,
+      username,
+      passwordHash,
       loginMethod: "local",
       role: input.role,
     });
     const id = Number(result[0].insertId);
-    await tx.insert(userWarehouses).values({
-      userId: id,
-      warehouseId: warehouse.id,
-      assignedBy: input.actorId,
-      assignedAt: new Date(),
-    });
+    if (warehouseIds.length) {
+      await tx.insert(userWarehouses).values(
+        warehouseIds.map(warehouseId => ({
+          userId: id,
+          warehouseId,
+          assignedBy: input.actorId,
+          assignedAt: new Date(),
+        }))
+      );
+    }
     await writeAdminAudit(tx, {
       actorId: input.actorId,
       action: "user_created",
       entityType: "user",
       entityId: id,
-      entityLabel: input.name.trim(),
-      details: `إضافة مستخدم محلي جديد بالدور ${input.role} والمستودع ${warehouse.name} (#${warehouse.id}).`,
+      entityLabel: input.name.trim() || username,
+      details: `إضافة حساب محلي ${username} بالدور ${input.role} وإسناد المستودعات: ${assignedWarehouses.map(warehouse => warehouse.name).join("، ") || "جميع المستودعات (مدير)"}.`,
     });
     return { success: true as const, id };
   });
+}
+
+export async function updateUserAccess(input: {
+  id: number;
+  username: string;
+  password?: string;
+  role: import("../drizzle/schema").WarehouseRole;
+  warehouseIds: number[];
+  actorId: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
+  if (!isValidUsername(input.username))
+    throw new Error("اسم المستخدم يجب أن يكون 3–64 محرفًا من الحروف والأرقام و(. _ -) دون مسافات.");
+  const username = normalizeUsername(input.username);
+  const warehouseIds = Array.from(new Set(input.warehouseIds));
+  const [target] = await db
+    .select({
+      id: users.id,
+      openId: users.openId,
+      name: users.name,
+      role: users.role,
+      username: users.username,
+      loginMethod: users.loginMethod,
+      hasLocalPassword: sql<boolean>`${users.passwordHash} IS NOT NULL`,
+    })
+    .from(users)
+    .where(eq(users.id, input.id))
+    .limit(1);
+  if (!target) throw new Error("المستخدم غير موجود.");
+
+  const currentAssignments = await db
+    .select({ warehouseId: userWarehouses.warehouseId })
+    .from(userWarehouses)
+    .where(eq(userWarehouses.userId, input.id));
+  const currentIds = currentAssignments.map(row => row.warehouseId).sort((a, b) => a - b);
+  const nextIds = [...warehouseIds].sort((a, b) => a - b);
+  const assignmentsChanged =
+    currentIds.length !== nextIds.length ||
+    currentIds.some((warehouseId, index) => warehouseId !== nextIds[index]);
+
+  if (input.actorId === target.id) {
+    if (input.role !== target.role || assignmentsChanged) {
+      throw new Error("لا يمكنك تغيير دورك أو إسناداتك بنفسك؛ اطلب ذلك من مدير آخر.");
+    }
+  } else {
+    assertRoleChangeAllowed({
+      actorId: input.actorId,
+      targetId: target.id,
+      targetOpenId: target.openId,
+      ownerOpenId: ENV.ownerOpenId,
+      role: input.role,
+    });
+  }
+
+  const assignedWarehouses = warehouseIds.length
+    ? await db
+        .select({ id: warehouses.id, name: warehouses.name, isActive: warehouses.isActive })
+        .from(warehouses)
+        .where(inArray(warehouses.id, warehouseIds))
+    : [];
+  if (
+    (assignmentsChanged && assignedWarehouses.length !== warehouseIds.length) ||
+    (assignmentsChanged && assignedWarehouses.some(warehouse => !warehouse.isActive))
+  ) {
+    throw new Error("يوجد مستودع غير موجود أو غير نشط ضمن الاختيارات.");
+  }
+  if (
+    input.role !== "admin" &&
+    (warehouseIds.length === 0 || !assignedWarehouses.some(warehouse => warehouse.isActive))
+  ) {
+    throw new Error("يجب إسناد مستودع نشط واحد على الأقل لهذا الدور.");
+  }
+  const [usernameOwner] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+  if (usernameOwner && usernameOwner.id !== target.id)
+    throw new Error("اسم المستخدم مستخدم مسبقًا.");
+
+  const passwordHash = input.password
+    ? await hashLocalPassword(input.password)
+    : undefined;
+  await db.transaction(async tx => {
+    await tx
+      .update(users)
+      .set({
+        username,
+        role: input.role,
+        loginMethod:
+          passwordHash || target.hasLocalPassword ? "local" : target.loginMethod,
+        ...(passwordHash
+          ? {
+              passwordHash,
+              authVersion: sql`${users.authVersion} + 1`,
+            }
+          : {}),
+      })
+      .where(eq(users.id, input.id));
+
+    if (assignmentsChanged) {
+      await tx.delete(userWarehouses).where(eq(userWarehouses.userId, input.id));
+      if (warehouseIds.length) {
+        await tx.insert(userWarehouses).values(
+          warehouseIds.map(warehouseId => ({
+            userId: input.id,
+            warehouseId,
+            assignedBy: input.actorId,
+            assignedAt: new Date(),
+          }))
+        );
+      }
+    }
+
+    const details = [
+      `الدور السابق: ${target.role}؛ الدور الجديد: ${input.role}`,
+      `المستودعات الجديدة: ${assignedWarehouses.map(warehouse => warehouse.name).join("، ") || "لا يوجد (مدير يرى الجميع)"}`,
+      passwordHash ? "تم تعيين/إعادة تعيين كلمة مرور محلية." : "لم تتغير كلمة المرور.",
+    ].join("؛ ");
+    await writeAdminAudit(tx, {
+      actorId: input.actorId,
+      action: "user_role_changed",
+      entityType: "user",
+      entityId: target.id,
+      entityLabel: target.name ?? username,
+      details,
+    });
+  });
+  return { success: true, passwordChanged: Boolean(passwordHash) } as const;
 }
 
 export async function updateUserRole(input: {
@@ -2287,9 +2520,17 @@ export async function listInventoryBalancePage(options?: {
 }
 
 export async function getMaterialWarehouseBalance(input: {
-  materialId: number;
-  warehouseId: number;
+  materialId?: number;
+  warehouseId?: number;
+  allowedWarehouseIds?: number[] | null;
 }) {
+  if (!input.materialId || !input.warehouseId) return null;
+  if (
+    Array.isArray(input.allowedWarehouseIds) &&
+    !input.allowedWarehouseIds.includes(input.warehouseId)
+  ) {
+    return null;
+  }
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
   const [[material], [warehouse], [balance]] = await Promise.all([
@@ -2493,6 +2734,67 @@ export async function deleteMemo(id: number, deletedBy: number) {
     });
     return { success: true as const, deletedBy };
   });
+}
+
+export async function listCoordinationIncoming(warehouseIds?: number[] | null) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: memos.id,
+      memoNumber: memos.memoNumber,
+      memoDate: memos.memoDate,
+      status: memos.status,
+      warehouseId: memos.warehouseId,
+      warehouseName: warehouses.name,
+      relatedMemoId: memos.relatedMemoId,
+      notes: memos.notes,
+    })
+    .from(memos)
+    .innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
+    .where(
+      and(
+        eq(memos.type, "inbound"),
+        eq(warehouses.name, "مستودع المنسقات"),
+        like(memos.notes, "إدخال تلقائي للمواد القديمة%")
+      )
+    )
+    .orderBy(desc(memos.memoDate), desc(memos.id));
+  if (!rows.length) return [];
+
+  const sourceIds = rows
+    .map(row => row.relatedMemoId)
+    .filter((id): id is number => id !== null && id > 0);
+  const sources = sourceIds.length
+    ? await db
+        .select({
+          id: memos.id,
+          memoNumber: memos.memoNumber,
+          warehouseId: memos.warehouseId,
+          warehouseName: warehouses.name,
+        })
+        .from(memos)
+        .innerJoin(warehouses, eq(memos.warehouseId, warehouses.id))
+        .where(inArray(memos.id, sourceIds))
+    : [];
+  const sourceById = new Map(sources.map(row => [row.id, row]));
+
+  return rows
+    .filter(row => {
+      const source = row.relatedMemoId
+        ? sourceById.get(row.relatedMemoId)
+        : undefined;
+      return (
+        source !== undefined &&
+        (warehouseIds == null || warehouseIds.includes(source.warehouseId))
+      );
+    })
+    .map(row => ({
+      ...row,
+      source: row.relatedMemoId
+        ? sourceById.get(row.relatedMemoId) ?? null
+        : null,
+    }));
 }
 
 export async function listFinanceReconciliationSummary(warehouseIds?: number[] | null) {

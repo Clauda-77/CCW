@@ -33,12 +33,13 @@ describe("واجهة لوحة التحكم وتسجيل الدخول", () => {
     expect(loginSource).toContain("legacy-old-hero");
   });
 
-  it("تعرض تسجيل الدخول بقائمة مستخدمين وزر تسجيل خروج واضحًا دون كلمة محلي", () => {
+  it("تعرض تسجيل الدخول المحلي وتبقي الدخول المؤقت للتطوير فقط", () => {
     expect(loginSource).toContain("users.previewList.useQuery");
     expect(loginSource).toContain("اختر المستخدم");
-    expect(loginSource).not.toContain("محلي");
+    expect(loginSource).toContain("passwordLogin.mutate");
     expect(loginSource).toContain("localLogin.mutate");
-    expect(loginSource).toContain("warehouseId: Number(localWarehouseId)");
+    expect(loginSource).toContain("warehouseId: Number(devWarehouseId)");
+    expect(loginSource).toContain("const isLocalDev = import.meta.env.DEV");
     expect(loginSource).toContain("auth.loginWarehouses.useQuery");
     expect(loginSource).not.toContain("الدخول بالحساب المعتمد");
     expect(loginSource).not.toContain("startLogin");

@@ -10,13 +10,21 @@ describe("إدارة المستخدمين", () => {
   it("يعرض للمدير إضافة مستخدم جديد واختيار الدور", () => {
     expect(pageSource).toContain("مستخدم جديد");
     expect(pageSource).toContain("trpc.users.create.useMutation");
-    expect(pageSource).toContain("اسم المستخدم");
+    expect(pageSource).toContain("اسم الدخول");
+    expect(pageSource).toContain("new-user-password");
     expect(pageSource).toContain("new-user-role");
     expect(pageSource).toContain('const isAdmin = isDevelopment || user?.role === "admin";');
   });
 
+  it("يسمح بتعديل الحساب ذي المعرّف صفر ويعامل كلمة المرور الفارغة كعدم تغيير", () => {
+    expect(routerSource).toContain("id: z.number().int().nonnegative(),");
+    expect(routerSource).toContain("password: z.preprocess(");
+    expect(pageSource).toContain("password: resetPassword || undefined,");
+    expect(pageSource).toContain("resetPassword.length > 0 && resetPassword.length < 12");
+  });
+
   it("يتيح البحث والتصفية في قائمة المستخدمين", () => {
-    expect(pageSource).toContain("ابحث بالاسم أو البريد أو الدور أو رقم المستخدم");
+    expect(pageSource).toContain("ابحث بالاسم أو اسم الدخول أو البريد أو الدور أو المستودعات");
     expect(pageSource).toContain("useMemo");
     expect(pageSource).toContain("roleMeta[entry.role as WarehouseRole]?.label");
   });

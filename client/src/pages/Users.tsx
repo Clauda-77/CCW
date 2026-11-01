@@ -40,8 +40,12 @@ type EditableUser = {
   id: number;
   name: string | null;
   email: string | null;
+  username: string | null;
+  hasLocalPassword: boolean;
   role: WarehouseRole;
   warehouseId: number | null;
+  warehouseIds: number[];
+  warehouseNames: string[];
 };
 
 const roleMeta: Record<
@@ -55,22 +59,22 @@ const roleMeta: Record<
   },
   reviewer: {
     label: "مراجع",
-    hint: "مراجعة التقارير والمذكرات",
+    hint: "مراجعة واعتماد المذكرات ضمن المستودعات المسندة",
     className: "bg-[#f1edff] text-[#6544a5]",
   },
   data_entry: {
     label: "مدخل بيانات",
-    hint: "إدخال المواد والمذكرات",
+    hint: "إنشاء مسودات المذكرات ضمن المستودعات المسندة",
     className: "bg-[#e9f8f4] text-[#14705e]",
   },
   warehouse_keeper: {
     label: "أمين مستودع",
-    hint: "إدارة الحركات والمستودعات",
+    hint: "إدارة الحركات وإنشاء المذكرات ضمن مستودعاته",
     className: "bg-[#fff3e4] text-[#a75a13]",
   },
   user: {
-    label: "دون صلاحية تشغيلية",
-    hint: "يتطلب إسناد دور",
+    label: "قراءة فقط",
+    hint: "عرض المعلومات المسموح بها دون تعديل",
     className: "bg-slate-100 text-slate-600",
   },
 };
@@ -82,6 +86,55 @@ const formatDate = (value: Date | string | null) =>
         timeStyle: "short",
       }).format(new Date(value))
     : "—";
+
+type WarehouseOption = { id: number; code: string; name: string; isActive: boolean };
+
+function WarehouseAssignmentPicker({
+  warehouses,
+  selectedIds,
+  onChange,
+  disabled = false,
+}: {
+  warehouses: WarehouseOption[];
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="max-h-52 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2">
+      {warehouses.map(warehouse => {
+        const selected = selectedIds.includes(warehouse.id);
+        const optionDisabled = disabled || (!warehouse.isActive && !selected);
+        return (
+          <label
+            key={warehouse.id}
+            className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-50 ${optionDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={optionDisabled}
+              onChange={event =>
+                onChange(
+                  event.target.checked
+                    ? [...selectedIds, warehouse.id]
+                    : selectedIds.filter(id => id !== warehouse.id)
+                )
+              }
+            />
+            <span>
+              {warehouse.name}{!warehouse.isActive ? " (غير نشط)" : ""}
+            </span>
+            <span className="mr-auto text-xs text-slate-400">{warehouse.code}</span>
+          </label>
+        );
+      })}
+      {warehouses.length === 0 && (
+        <p className="p-3 text-xs text-muted-foreground">لا توجد مستودعات نشطة.</p>
+      )}
+    </div>
+  );
+}
 
 export default function UsersPage() {
   const { isAuthenticated, user } = useAuth();
@@ -109,30 +162,34 @@ export default function UsersPage() {
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState<EditableUser | null>(null);
   const [nextRole, setNextRole] = useState<WarehouseRole>("data_entry");
-  const [nextWarehouseId, setNextWarehouseId] = useState("");
+  const [nextWarehouseIds, setNextWarehouseIds] = useState<number[]>([]);
+  const [editUsername, setEditUsername] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<WarehouseRole>("data_entry");
-  const [newWarehouseId, setNewWarehouseId] = useState("");
+  const [newWarehouseIds, setNewWarehouseIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
-  const updateRole = trpc.users.updateRole.useMutation({
-    onSuccess: async () => {
+  const logout = trpc.auth.logout.useMutation();
+  const updateAccess = trpc.users.updateAccess.useMutation({
+    onSuccess: async result => {
       await utils.users.list.invalidate();
       await utils.users.previewList.invalidate();
+      const updatedSelf = editing?.id === user?.id;
       setEditing(null);
-      toast.success("تم تحديث دور المستخدم.");
+      setResetPassword("");
+      if (updatedSelf && result.passwordChanged) {
+        await logout.mutateAsync();
+        toast.success("تم تحديث بيانات دخولك. سجّل الدخول بكلمة المرور الجديدة.");
+        window.location.assign("/login");
+        return;
+      }
+      toast.success("تم حفظ بيانات المستخدم وصلاحياته.");
     },
-    onError: error => toast.error(error.message || "تعذر تحديث دور المستخدم."),
-  });
-  const updateWarehouse = trpc.users.updateWarehouse.useMutation({
-    onSuccess: async () => {
-      await utils.users.list.invalidate();
-      await utils.users.previewList.invalidate();
-      setEditing(null);
-      toast.success("تم تحديث المستودع المسند للمستخدم.");
-    },
-    onError: error => toast.error(error.message || "تعذر تحديث مستودع المستخدم."),
+    onError: error => toast.error(error.message || "تعذر حفظ بيانات المستخدم."),
   });
   const createUser = trpc.users.create.useMutation({
     onSuccess: async () => {
@@ -141,8 +198,10 @@ export default function UsersPage() {
       setCreateOpen(false);
       setNewName("");
       setNewEmail("");
+      setNewUsername("");
+      setNewPassword("");
       setNewRole("data_entry");
-      setNewWarehouseId("");
+      setNewWarehouseIds([]);
       toast.success("تمت إضافة المستخدم.");
     },
     onError: error => toast.error(error.message || "تعذر إضافة المستخدم."),
@@ -151,7 +210,9 @@ export default function UsersPage() {
   const openRoleEditor = (entry: EditableUser) => {
     setEditing(entry);
     setNextRole(entry.role);
-    setNextWarehouseId(entry.warehouseId ? String(entry.warehouseId) : "");
+    setNextWarehouseIds(entry.warehouseIds ?? []);
+    setEditUsername(entry.username ?? "");
+    setResetPassword("");
   };
   const allRows = query.data ?? [];
   const rows = useMemo(() => {
@@ -162,7 +223,9 @@ export default function UsersPage() {
         entry.name,
         entry.email,
         entry.loginMethod,
+        entry.username,
         entry.warehouseName,
+        ...(entry.warehouseNames ?? []),
         roleMeta[entry.role as WarehouseRole]?.label,
         String(entry.id),
       ].some(value =>
@@ -224,7 +287,7 @@ export default function UsersPage() {
                 value={search}
                 onChange={event => setSearch(event.target.value)}
                 className="h-10 rounded-xl pr-9"
-                placeholder="ابحث بالاسم أو البريد أو الدور أو رقم المستخدم أو المستودع"
+                placeholder="ابحث بالاسم أو اسم الدخول أو البريد أو الدور أو المستودعات"
               />
             </div>
             <div className="text-sm text-muted-foreground">
@@ -234,19 +297,20 @@ export default function UsersPage() {
           <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#c9eaf7] bg-[#f4fcff] p-4 text-sm text-[#145f88]">
             <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              تعديل الأدوار متاح للمدير فقط. لا يمكن للمدير تخفيض صلاحية حسابه
-              الحالي أو خفض صلاحية مالك النظام، لحماية استمرارية الوصول الإداري.
+              إضافة الحسابات وإدارة الصلاحيات متاحة للمدير فقط. يمكن للمدير إعداد
+              بيانات دخوله، لكن لا يمكنه تغيير دوره أو مستودعاته بنفسه.
             </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-right">
+            <table className="w-full min-w-[1250px] text-right">
               <thead className="border-y border-slate-100 bg-slate-50/80 text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">المستخدم</th>
                   <th className="px-4 py-3 font-medium">البريد الإلكتروني</th>
+                  <th className="px-4 py-3 font-medium">اسم الدخول</th>
                   <th className="px-4 py-3 font-medium">طريقة الدخول</th>
                   <th className="px-4 py-3 font-medium">الدور</th>
-                  <th className="px-4 py-3 font-medium">المستودع المسند</th>
+                  <th className="px-4 py-3 font-medium">المستودعات المسندة</th>
                   <th className="px-4 py-3 font-medium">آخر دخول</th>
                   <th className="px-4 py-3 font-medium">إجراء</th>
                 </tr>
@@ -255,7 +319,7 @@ export default function UsersPage() {
                 {query.isLoading && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                     >
                       جار تحميل المستخدمين…
@@ -265,7 +329,7 @@ export default function UsersPage() {
                 {query.isError && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-4 py-10 text-center text-sm text-destructive"
                     >
                       تعذر تحميل المستخدمين.
@@ -275,7 +339,7 @@ export default function UsersPage() {
                 {!query.isLoading && !query.isError && rows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-4 py-10 text-center text-sm text-muted-foreground"
                     >
                       لا يوجد مستخدمون بعد. سيظهر المستخدم هنا عند دخوله للحساب
@@ -286,7 +350,7 @@ export default function UsersPage() {
                 {rows.map(entry => {
                   const meta =
                     roleMeta[entry.role as WarehouseRole] || roleMeta.user;
-                  const canEdit = isAdmin && entry.id !== user?.id;
+                  const canEdit = isAdmin;
                   return (
                     <tr
                       key={entry.id}
@@ -303,6 +367,12 @@ export default function UsersPage() {
                       <td className="px-4 py-4 text-slate-600">
                         {entry.email || "—"}
                       </td>
+                      <td className="px-4 py-4 font-mono text-slate-700">
+                        {entry.username || "غير مهيأ"}
+                        <p className="mt-1 font-sans text-[11px] text-slate-400">
+                          {entry.hasLocalPassword ? "كلمة مرور مهيأة" : "لم تُضبط كلمة مرور"}
+                        </p>
+                      </td>
                       <td className="px-4 py-4 text-slate-600">
                         {entry.loginMethod || "—"}
                       </td>
@@ -315,7 +385,11 @@ export default function UsersPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-4 font-semibold text-[#17698a]">
-                        {entry.warehouseName || "غير مسند (مستخدم قديم)"}
+                        {entry.role === "admin"
+                          ? "جميع المستودعات"
+                          : entry.warehouseNames?.length
+                            ? entry.warehouseNames.join("، ")
+                            : "غير مسند — يتطلب ربطًا"}
                       </td>
                       <td className="px-4 py-4 text-slate-600">
                         <span className="inline-flex items-center gap-1">
@@ -332,7 +406,7 @@ export default function UsersPage() {
                           className="gap-1.5"
                         >
                           <Pencil className="h-4 w-4" />
-                          تعديل الدور
+                          إدارة الحساب والصلاحيات
                         </Button>
                       </td>
                     </tr>
@@ -355,20 +429,22 @@ export default function UsersPage() {
             className="grid gap-4 pt-2"
             onSubmit={event => {
               event.preventDefault();
-              if (!newWarehouseId) {
-                toast.error("اختر المستودع المسند للمستخدم.");
+              if (newRole !== "admin" && newWarehouseIds.length === 0) {
+                toast.error("اختر مستودعًا واحدًا على الأقل لهذا الدور.");
                 return;
               }
               createUser.mutate({
                 name: newName,
                 email: newEmail,
+                username: newUsername,
+                password: newPassword,
                 role: newRole,
-                warehouseId: Number(newWarehouseId),
+                warehouseIds: newWarehouseIds,
               });
             }}
           >
             <div className="grid gap-2">
-              <Label htmlFor="new-user-name">اسم المستخدم</Label>
+              <Label htmlFor="new-user-name">الاسم الكامل</Label>
               <Input
                 id="new-user-name"
                 required
@@ -391,6 +467,36 @@ export default function UsersPage() {
               />
             </div>
             <div className="grid gap-2">
+              <Label htmlFor="new-user-username">اسم الدخول</Label>
+              <Input
+                id="new-user-username"
+                required
+                minLength={3}
+                maxLength={64}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={newUsername}
+                onChange={event => setNewUsername(event.target.value)}
+                placeholder="أحرف أو أرقام، دون مسافات"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="new-user-password">كلمة المرور الأولية</Label>
+              <Input
+                id="new-user-password"
+                type="password"
+                required
+                minLength={12}
+                maxLength={128}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={event => setNewPassword(event.target.value)}
+                placeholder="12 محرفًا على الأقل"
+              />
+              <p className="text-xs text-muted-foreground">تُحفظ مجزأة، ولا يمكن عرضها لاحقًا؛ استخدم إعادة التعيين عند الحاجة.</p>
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="new-user-role">الدور</Label>
               <Select
                 value={newRole}
@@ -409,29 +515,16 @@ export default function UsersPage() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="new-user-warehouse">المستودع المسند</Label>
-              <Select value={newWarehouseId} onValueChange={setNewWarehouseId}>
-                <SelectTrigger id="new-user-warehouse">
-                  <SelectValue
-                    placeholder={
-                      warehouseQuery.isLoading
-                        ? "جار تحميل المستودعات…"
-                        : "اختر مستودع المستخدم"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent dir="rtl">
-                  {activeWarehouses.map(warehouse => (
-                    <SelectItem key={warehouse.id} value={String(warehouse.id)}>
-                      {warehouse.name} — {warehouse.code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!warehouseQuery.isLoading && activeWarehouses.length === 0 && (
-                <p className="text-xs text-destructive">
-                  لا توجد مستودعات نشطة. أضف مستودعًا قبل إنشاء المستخدم.
-                </p>
+              <Label>المستودعات المسندة</Label>
+              <WarehouseAssignmentPicker
+                warehouses={activeWarehouses}
+                selectedIds={newWarehouseIds}
+                onChange={setNewWarehouseIds}
+              />
+              {newRole === "admin" ? (
+                <p className="text-xs text-muted-foreground">المدير يصل إلى جميع المستودعات حتى دون إسناد فردي.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">اختر مستودعًا واحدًا أو أكثر؛ لا يمكن لهذا الدور العمل دون إسناد.</p>
               )}
             </div>
             <Button
@@ -439,7 +532,7 @@ export default function UsersPage() {
               disabled={
                 createUser.isPending ||
                 warehouseQuery.isLoading ||
-                activeWarehouses.length === 0
+                (newRole !== "admin" && activeWarehouses.length === 0)
               }
               className="rounded-xl bg-[#17698a] hover:bg-[#125875]"
             >
@@ -465,10 +558,43 @@ export default function UsersPage() {
           </DialogHeader>
           <div className="grid gap-4 pt-2">
             <div className="grid gap-2">
+              <Label htmlFor="edit-user-username">اسم الدخول</Label>
+              <Input
+                id="edit-user-username"
+                required
+                minLength={3}
+                maxLength={64}
+                autoComplete="username"
+                value={editUsername}
+                onChange={event => setEditUsername(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-user-password">كلمة مرور جديدة (اختياري)</Label>
+              <Input
+                id="edit-user-password"
+                type="password"
+                minLength={12}
+                maxLength={128}
+                autoComplete="new-password"
+                value={resetPassword}
+                onChange={event => setResetPassword(event.target.value)}
+                placeholder="اتركها فارغة للإبقاء على الحالية"
+              />
+              {resetPassword.length > 0 && resetPassword.length < 12 ? (
+                <p className="text-xs font-semibold text-destructive">
+                  كلمة المرور الجديدة يجب أن تكون 12 محرفًا على الأقل، أو اترك الحقل فارغًا للإبقاء على الحالية.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">إدخال كلمة مرور هنا يعيد تعيينها ويلغي الجلسات السابقة لهذا الحساب.</p>
+              )}
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="user-role">الدور</Label>
               <Select
                 value={nextRole}
                 onValueChange={value => setNextRole(value as WarehouseRole)}
+                disabled={editing?.id === user?.id}
               >
                 <SelectTrigger id="user-role">
                   <SelectValue />
@@ -486,49 +612,50 @@ export default function UsersPage() {
               {roleMeta[nextRole].hint}
             </p>
             <div className="grid gap-2">
-              <Label htmlFor="user-warehouse">المستودع المسند</Label>
-              <Select
-                value={nextWarehouseId}
-                onValueChange={setNextWarehouseId}
-              >
-                <SelectTrigger id="user-warehouse">
-                  <SelectValue
-                    placeholder={
-                      warehouseQuery.isLoading
-                        ? "جار تحميل المستودعات…"
-                        : "اختر مستودع المستخدم"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent dir="rtl">
-                  {activeWarehouses.map(warehouse => (
-                    <SelectItem key={warehouse.id} value={String(warehouse.id)}>
-                      {warehouse.name} — {warehouse.code}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>المستودعات المسندة</Label>
+              <WarehouseAssignmentPicker
+                warehouses={warehouseQuery.data ?? []}
+                selectedIds={nextWarehouseIds}
+                onChange={setNextWarehouseIds}
+                disabled={editing?.id === user?.id}
+              />
+              {nextRole === "admin" ? (
+                <p className="text-xs text-muted-foreground">المدير يصل إلى جميع المستودعات.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">اختر مستودعًا واحدًا أو أكثر.</p>
+              )}
             </div>
             <Button
               onClick={() => {
-                if (!editing || !nextWarehouseId) {
-                  toast.error("اختر المستودع المسند للمستخدم.");
+                if (!editing) return;
+                if (nextRole !== "admin" && nextWarehouseIds.length === 0) {
+                  toast.error("اختر مستودعًا واحدًا على الأقل لهذا الدور.");
                   return;
                 }
-                updateRole.mutate({ id: editing.id, role: nextRole });
-                updateWarehouse.mutate({
+                if (!editUsername.trim()) {
+                  toast.error("أدخل اسم الدخول.");
+                  return;
+                }
+                if (resetPassword.length > 0 && resetPassword.length < 12) {
+                  toast.error("كلمة المرور الجديدة يجب أن تكون 12 محرفًا على الأقل.");
+                  return;
+                }
+                updateAccess.mutate({
                   id: editing.id,
-                  warehouseId: Number(nextWarehouseId),
+                  username: editUsername,
+                  password: resetPassword || undefined,
+                  role: nextRole,
+                  warehouseIds: nextWarehouseIds,
                 });
               }}
               disabled={
-                updateRole.isPending ||
-                updateWarehouse.isPending ||
-                warehouseQuery.isLoading
+                updateAccess.isPending ||
+                warehouseQuery.isLoading ||
+                (resetPassword.length > 0 && resetPassword.length < 12)
               }
               className="rounded-xl bg-[#17698a] hover:bg-[#125875]"
             >
-              {updateRole.isPending || updateWarehouse.isPending
+              {updateAccess.isPending
                 ? "جار الحفظ…"
                 : "حفظ التعديلات"}
             </Button>

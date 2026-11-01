@@ -56,7 +56,7 @@ export function isReadOnly(role: WarehouseRole): boolean {
 // ─────────────────────────────────────────────────
 
 /**
- * إذا رجع `null` → المستخدم يشوف كل المستودعات (admin/reviewer)
+ * إذا رجع `null` → المستخدم يشوف كل المستودعات (admin فقط)
  * إذا رجع مصفوفة → المستخدم يشوف بس المستودعات بهذي القائمة
  */
 export function filterWarehouseScope(
@@ -85,7 +85,7 @@ export const roleLabels: Record<WarehouseRole, string> = {
   user: "مستخدم",
   warehouse_keeper: "أمين مستودع",
   data_entry: "مدخل بيانات",
-  reviewer: "مراقب مستودع",
+  reviewer: "مراجع",
   admin: "مدير النظام",
 };
 

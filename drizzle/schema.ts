@@ -8,12 +8,15 @@ export const users = mysqlTable("users", {
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  username: varchar("username", { length: 64 }),
+  passwordHash: varchar("passwordHash", { length: 255 }),
+  authVersion: int("authVersion").default(0).notNull(),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", userRoles).default("data_entry").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
-});
+}, table => [uniqueIndex("users_username_uq").on(table.username)]);
 
 export const warehouses = mysqlTable("warehouses", {
   id: int("id").autoincrement().primaryKey(),
@@ -97,6 +100,7 @@ export const memos = mysqlTable("memos", {
   status: mysqlEnum("status", ["draft", "pending_review", "approved", "rejected", "cancelled"]).default("draft").notNull(),
   warehouseId: int("warehouseId").notNull().references(() => warehouses.id),
   partyId: int("partyId").references(() => parties.id),
+  relatedMemoId: int("relatedMemoId"),
   folderNumber: varchar("folderNumber", { length: 64 }),
   orderNumber: varchar("orderNumber", { length: 128 }),
   orderDate: timestamp("orderDate"),
@@ -119,6 +123,7 @@ export const memos = mysqlTable("memos", {
   index("memos_status_idx").on(table.status),
   index("memos_date_idx").on(table.memoDate),
   index("memos_party_idx").on(table.partyId),
+  index("memos_related_idx").on(table.relatedMemoId),
 ]);
 
 export const memoItems = mysqlTable("memoItems", {

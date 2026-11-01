@@ -10,6 +10,7 @@ function createContext(role: AuthenticatedUser["role"]): TrpcContext {
       id: 1,
       openId: "role-test-user",
       email: "roles@example.test",
+      username: null,
       name: "اختبار الصلاحيات",
       loginMethod: "test",
       role,
@@ -18,7 +19,7 @@ function createContext(role: AuthenticatedUser["role"]): TrpcContext {
       lastSignedIn: new Date(),
     },
     req: { protocol: "https", headers: {} } as TrpcContext["req"],
-    res: { clearCookie: () => undefined } as TrpcContext["res"],
+    res: { clearCookie: () => undefined } as unknown as TrpcContext["res"],
   };
 }
 
@@ -33,9 +34,29 @@ describe("warehouse role procedures", () => {
     await expect(caller.warehouse.memoReviewAccess()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("blocks a warehouse keeper from reviewer-only actions", async () => {
+    const caller = appRouter.createCaller(createContext("warehouse_keeper"));
+    await expect(caller.warehouse.memoReviewAccess()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("allows a data-entry operator to access memo entry actions", async () => {
     const caller = appRouter.createCaller(createContext("data_entry"));
     await expect(caller.warehouse.memoEntryAccess()).resolves.toEqual({ permitted: true });
+  });
+
+  it("blocks a reviewer from creating memos", async () => {
+    const reviewer = appRouter.createCaller(createContext("reviewer"));
+    await expect(reviewer.warehouse.memoEntryAccess()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("reserves warehouse and party master-data management for administrators", async () => {
+    const reviewer = appRouter.createCaller(createContext("reviewer"));
+    await expect(
+      reviewer.entities.createWarehouse({ code: "T-01", name: "اختبار", kind: "branch" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      reviewer.entities.createParty({ name: "اختبار", type: "recipient" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("allows a warehouse keeper to access stock operations", async () => {

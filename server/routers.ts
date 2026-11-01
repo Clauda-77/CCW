@@ -20,6 +20,14 @@ import {
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { sdk } from "./_core/sdk";
+import {
+  clearLocalLoginFailures,
+  isValidUsername,
+  isLocalLoginBlocked,
+  normalizeUsername,
+  recordLocalLoginFailure,
+  verifyLocalPassword,
+} from "./localAuth";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
@@ -40,7 +48,6 @@ export const warehouseKeeperProcedure = withRoles("warehouse_keeper", "reviewer"
 export const dataEntryProcedure = withRoles(
   "data_entry",
   "warehouse_keeper",
-  "reviewer",
   "admin"
 );
 export const reviewerProcedure = withRoles("reviewer", "admin");
@@ -85,6 +92,79 @@ export const appRouter = router({
       });
       return { success: true } as const;
     }),
+    passwordLogin: publicProcedure
+      .input(
+        z.object({
+          username: z.string().trim().refine(isValidUsername, "اسم المستخدم غير صالح."),
+          password: z.string().min(1).max(128),
+          warehouseId: z.number().int().positive(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const username = normalizeUsername(input.username);
+        const clientIp = ctx.req.ip || ctx.req.socket.remoteAddress || "unknown";
+        const rateLimitKey = `${clientIp}:${username}`;
+        if (isLocalLoginBlocked(rateLimitKey))
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "محاولات دخول كثيرة. انتظر 15 دقيقة ثم حاول مجددًا.",
+          });
+
+        const credential = await warehouseDb.getUserCredentialByUsername(username);
+        const validPassword = await verifyLocalPassword(
+          input.password,
+          credential?.passwordHash
+        );
+        if (!credential || !validPassword) {
+          const blocked = recordLocalLoginFailure(rateLimitKey);
+          throw new TRPCError({
+            code: blocked ? "TOO_MANY_REQUESTS" : "UNAUTHORIZED",
+            message: blocked
+              ? "محاولات دخول كثيرة. انتظر 15 دقيقة ثم حاول مجددًا."
+              : "اسم المستخدم أو كلمة المرور غير صحيحة.",
+          });
+        }
+
+        const warehouse = await warehouseDb.getWarehouseById(input.warehouseId);
+        if (!warehouse || !warehouse.isActive)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "المستودع المحدد غير موجود أو غير نشط.",
+          });
+        const assignedWarehouses = await warehouseDb.listUserWarehouses(credential.id);
+        if (
+          credential.role !== "admin" &&
+          !assignedWarehouses.some(assigned => assigned.id === warehouse.id)
+        )
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "لا يملك هذا الحساب صلاحية الدخول إلى المستودع المحدد.",
+          });
+
+        clearLocalLoginFailures(rateLimitKey);
+        const sessionToken = await sdk.createSessionToken(credential.openId, {
+          name: credential.name ?? credential.username ?? `Local user ${credential.id}`,
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          authVersion: credential.authVersion,
+        });
+        ctx.res.cookie(
+          COOKIE_NAME,
+          sessionToken,
+          getSessionCookieOptions(ctx.req)
+        );
+        await warehouseDb.touchUserLastSignedIn(credential.openId);
+        return {
+          success: true as const,
+          user: {
+            id: credential.id,
+            name: credential.name,
+            role: credential.role,
+            warehouseId: warehouse.id,
+            warehouseName: warehouse.name,
+          },
+        };
+      }),
     localLogin: publicProcedure
       .input(
         z.object({
@@ -134,6 +214,7 @@ export const appRouter = router({
           name: user.name ?? `Local user ${user.id}`,
           warehouseId: warehouse.id,
           warehouseName: warehouse.name,
+          authVersion: user.authVersion,
         });
         ctx.res.cookie(
           COOKIE_NAME,
@@ -159,30 +240,31 @@ export const appRouter = router({
         throw new TRPCError({ code: "FORBIDDEN" });
       return warehouseDb.listUsers();
     }),
-    updateRole: administratorProcedure
-      .input(
-        z.object({ id: z.number().int().positive(), role: z.enum(userRoles) })
-      )
-      .mutation(({ ctx, input }) =>
-        warehouseDb.updateUserRole({ ...input, actorId: ctx.user.id })
-      ),
-    updateWarehouse: administratorProcedure
+    updateAccess: administratorProcedure
       .input(
         z.object({
-          id: z.number().int().positive(),
-          warehouseId: z.number().int().positive(),
+          id: z.number().int().nonnegative(),
+          username: z.string().trim().refine(isValidUsername, "اسم المستخدم غير صالح."),
+          password: z.preprocess(
+            value => (value === "" ? undefined : value),
+            z.string().min(12).max(128).optional()
+          ),
+          role: z.enum(userRoles),
+          warehouseIds: z.array(z.number().int().positive()).max(500),
         })
       )
       .mutation(({ ctx, input }) =>
-        warehouseDb.updateUserWarehouse({ ...input, actorId: ctx.user.id })
+        warehouseDb.updateUserAccess({ ...input, actorId: ctx.user.id })
       ),
     create: administratorProcedure
       .input(
         z.object({
           name: z.string().trim().min(2).max(160),
           email: z.string().trim().email().optional().or(z.literal("")),
+          username: z.string().trim().refine(isValidUsername, "اسم المستخدم غير صالح."),
+          password: z.string().min(12).max(128),
           role: z.enum(userRoles),
-          warehouseId: z.number().int().positive(),
+          warehouseIds: z.array(z.number().int().positive()).max(500),
         })
       )
       .mutation(({ ctx, input }) =>
@@ -288,7 +370,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN" });
         return warehouseDb.listParties(input?.search, input?.limit ?? 5000);
       }),
-    createWarehouse: warehouseKeeperProcedure
+    createWarehouse: administratorProcedure
       .input(
         z.object({
           code: z.string().trim().min(1).max(64),
@@ -300,7 +382,7 @@ export const appRouter = router({
       .mutation(({ ctx, input }) =>
         warehouseDb.createWarehouse(input, ctx.user.id)
       ),
-    updateWarehouse: warehouseKeeperProcedure
+    updateWarehouse: administratorProcedure
       .input(
         z.object({
           id: z.number().int().positive(),
@@ -323,7 +405,7 @@ export const appRouter = router({
       .mutation(({ ctx, input }) =>
         warehouseDb.deleteWarehouse(input.id, ctx.user.id)
       ),
-    createParty: dataEntryProcedure
+    createParty: administratorProcedure
       .input(
         z.object({
           legacyNumber: z.string().trim().max(64).optional(),
@@ -336,7 +418,7 @@ export const appRouter = router({
       .mutation(({ ctx, input }) =>
         warehouseDb.createParty(input, ctx.user.id)
       ),
-    updateParty: dataEntryProcedure
+    updateParty: administratorProcedure
       .input(
         z.object({
           id: z.number().int().positive(),

@@ -39,15 +39,14 @@ describe("local development login", () => {
     expect(routerSource).toContain("localLogin");
     expect(routerSource).toContain("warehouseDb.getUserById(input.userId)");
     expect(routerSource).toContain("sdk.createSessionToken(user.openId");
-    expect(routerSource).toContain("ctx.res.cookie(COOKIE_NAME");
+    expect(routerSource).toContain("ctx.res.cookie(");
   });
 
-  it("renders a local password form only in development builds", () => {
+  it("renders account login in production and keeps legacy bootstrap development-only", () => {
     expect(loginSource).toContain("const isLocalDev = import.meta.env.DEV");
-    expect(loginSource).toContain("const isLocalDev = import.meta.env.DEV");
-    expect(loginSource).not.toContain("محلي");
+    expect(loginSource).toContain("passwordLogin.mutate");
     expect(loginSource).toContain("localLogin.mutate");
-    expect(loginSource).toContain("warehouseId: Number(localWarehouseId)");
+    expect(loginSource).toContain("warehouseId: Number(devWarehouseId)");
     expect(loginSource).toContain("auth.loginWarehouses.useQuery");
   });
 

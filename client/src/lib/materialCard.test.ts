@@ -52,7 +52,7 @@ describe("بطاقة المادة", () => {
     expect(rows.map(row => row[6])).toEqual([8, 9]);
   });
 
-  it("يعرض رقم المجلد مع الرقم المالي للاستلام والتركيب والتنسيق", () => {
+  it("يعرض رقم المجلد مع رقم المذكرة للاستلام والتركيب والتنسيق", () => {
     const receipt = buildMaterialCardRows([
       {
         memoNumber: "SER-1",
@@ -86,11 +86,11 @@ describe("بطاقة المادة", () => {
       },
     ], 0);
 
-    expect(receipt[0]?.[2]).toBe("12 / FIN-45");
-    expect(transfer[0]?.[2]).toBe("13 / FIN-46");
+    expect(receipt[0]?.[2]).toBe("12 / SER-1");
+    expect(transfer[0]?.[2]).toBe("13 / SER-2");
   });
 
-  it("يعرض رقم المجلد مع الرقم المتسلسل للتسليم والإدخال", () => {
+  it("يعرض رقم المجلد مع رقم المذكرة للتسليم والإدخال", () => {
     const delivery = buildMaterialCardRows([
       {
         memoNumber: "SER-3",
@@ -126,5 +126,24 @@ describe("بطاقة المادة", () => {
 
     expect(delivery[0]?.[2]).toBe("14 / SER-3");
     expect(entry[0]?.[2]).toBe("15 / SER-4");
+  });
+
+  it("يستخدم رقم المذكرة الأصلي المستورد بعد رقم المجلد", () => {
+    const rows = buildMaterialCardRows([
+      {
+        memoNumber: "internal-123",
+        sourceMemoNumber: "LEGACY-77",
+        folderNumber: "16",
+        memoDate: "2026-05-05",
+        occurredAt: "2026-05-05",
+        movementType: "inbound",
+        quantityIn: "1",
+        quantityOut: "0",
+        partyName: "مورد",
+        notes: null,
+      },
+    ], 0);
+
+    expect(rows[0]?.[2]).toBe("16 / LEGACY-77");
   });
 });

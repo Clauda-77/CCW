@@ -55,6 +55,7 @@ import { displayMemoNumber } from "./memoNumber";
 export type MaterialCardMovement = {
   memoNumber: string | null;
   sourceMemoNumber?: string | null;
+  folderNumber?: string | null;
   memoDate: Date | string | null;
   occurredAt: Date | string;
   movementType: "opening" | "inbound" | "outbound" | "adjustment" | "transfer_in" | "transfer_out";
@@ -97,7 +98,12 @@ export function buildMaterialCardRows(movements: MaterialCardMovement[], opening
     balance += quantityIn - quantityOut;
     const occurredAt = new Date(movement.occurredAt).getTime();
     if (occurredAt < from || occurredAt > to) continue;
-    rows.push([rows.length + 1, movementLabel[movement.movementType], displayMemoNumber(movement.sourceMemoNumber, movement.memoNumber), movement.memoDate ? new Date(movement.memoDate).toLocaleDateString("ar-SY") : "", quantityIn || "", quantityOut || "", balance, new Date(movement.occurredAt).toLocaleDateString("ar-SY"), movement.partyName || "", movement.notes || ""]);
+    const memoNumber = displayMemoNumber(movement.sourceMemoNumber, movement.memoNumber);
+    const folderNumber = movement.folderNumber?.trim();
+    const documentNumber = folderNumber && memoNumber
+      ? `${folderNumber} / ${memoNumber}`
+      : folderNumber || memoNumber;
+    rows.push([rows.length + 1, movementLabel[movement.movementType], documentNumber, movement.memoDate ? new Date(movement.memoDate).toLocaleDateString("ar-SY") : "", quantityIn || "", quantityOut || "", balance, new Date(movement.occurredAt).toLocaleDateString("ar-SY"), movement.partyName || "", movement.notes || ""]);
   }
   return rows;
 }

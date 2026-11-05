@@ -5471,6 +5471,7 @@ export async function getMaterialCard(input: {
   const movementFields = {
     memoNumber: memos.memoNumber,
     sourceMemoNumber: memos.sourceMemoNumber,
+    folderNumber: memos.folderNumber,
     memoDate: memos.memoDate,
     occurredAt: stockMovements.occurredAt,
     movementType: stockMovements.movementType,

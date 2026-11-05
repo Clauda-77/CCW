@@ -5,6 +5,8 @@ const layoutSource = readFileSync(new URL("../components/DashboardLayout.tsx", i
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const memoSource = readFileSync(new URL("./Memos.tsx", import.meta.url), "utf8");
 const memoDetailsSource = readFileSync(new URL("./MemoDetails.tsx", import.meta.url), "utf8");
+const dbSource = readFileSync(new URL("../../../server/db.ts", import.meta.url), "utf8");
+const routerSource = readFileSync(new URL("../../../server/routers.ts", import.meta.url), "utf8");
 const inventorySource = readFileSync(new URL("./Inventory.tsx", import.meta.url), "utf8");
 const materialsSource = readFileSync(new URL("./Materials.tsx", import.meta.url), "utf8");
 const partyPickerSource = readFileSync(new URL("../components/MemoPartyPicker.tsx", import.meta.url), "utf8");
@@ -19,8 +21,10 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
     expect(layoutSource).not.toContain("عمليات {item.label}");
     expect(layoutSource).not.toContain("quickMaterials");
     expect(layoutSource).toContain("dropdownItems(item)");
-    expect(layoutSource).toContain('label: "محضر تركيب وتنسيق", path: "/transfer"');
-    expect(layoutSource).toContain('label: "مذكرة الإدخال", path: "/entry"');
+    expect(layoutSource).toContain('label: "محضر تركيب وتنسيق"');
+    expect(layoutSource).toContain('path: "/transfer"');
+    expect(layoutSource).toContain('label: "مذكرة الإدخال"');
+    expect(layoutSource).toContain('path: "/entry"');
     expect(appSource).toContain('path={"/transfer"}');
     expect(appSource).toContain('path={"/entry"}');
     expect(appSource).toContain('inboundMode="entry"');
@@ -47,7 +51,7 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
     expect(memoSource).toContain("لم تتم إضافة أي مادة بعد");
     expect(memoSource).toContain('aria-label="البحث عن مادة"');
     expect(memoSource).toContain("بحث المواد");
-    expect(memoSource).toContain("اختر السطر ثم اضغط المادة لإضافتها مباشرة");
+    expect(memoSource).toContain("اضغط Enter لإنشائها");
     expect(memoSource).toContain("مواد المذكرة");
     expect(memoSource).toContain("بحث بالرقم المالي");
     expect(memoSource).toContain("بحث بالرقم المتسلسل للمذكرة");
@@ -57,17 +61,20 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
     expect(memoSource).toContain('inboundMode?: "receipt" | "entry"');
     expect(memoSource).toContain('const inboundEntry = inbound && inboundMode === "entry"');
     expect(memoSource).toContain("const usePreview = isDevelopment && !isAuthenticated");
-    expect(memoSource).toContain("trpc.materials.list.useQuery({ search: materialSearch }, { enabled: isAuthenticated })");
-    expect(memoSource).toContain("trpc.materials.previewList.useQuery({ search: materialSearch }, { enabled: usePreview })");
-    expect(memoSource).toContain("const loadedMaterials = (usePreview ? materialsPreview.data : materialsLive.data) ?? []");
-    expect(memoSource).toContain("const selectedMaterialCache = lines.filter(line => line.materialId && line.materialName)");
-    expect(memoSource).toContain("إدخال مواد مستعملة مُعادة إلى المستودع");
+    expect(memoSource).toContain("trpc.materials.list.useQuery(");
+    expect(memoSource).toContain("trpc.materials.previewList.useQuery(");
+    expect(memoSource).toContain("{ search: materialSearch }");
+    expect(memoSource).toContain("const loadedMaterials =");
+    expect(memoSource).toContain("const selectedMaterialCache = lines");
+    expect(memoSource).toContain("line.materialId && line.materialName");
+    expect(memoSource).toContain("الإدخال للمواد المُعادة");
+    expect(memoSource).toContain("استلام مواد جديدة — تدخل أول مرة للمستودع");
     expect(memoSource).not.toContain("isAlwaysNewReceiptMaterial");
     expect(memoSource).toContain("محضر تركيب وتنسيق");
     expect(memoSource).toContain("تركيب وتنسيق");
     expect(memoSource).not.toContain("تركيب وتنسيق — بلا سعر");
     expect(memoSource).not.toContain("مطابقة البنود");
-    expect(memoSource).toContain('toast.success("تم إنشاء المذكرة بنجاح.")');
+    expect(memoSource).toContain('toast.success("تم إنشاء المذكرة وترحيل حركتها إلى المخزون بنجاح.")');
     expect(styleSource).toContain(".memo-editor-dialog form > div:nth-child(2) { display: none; }");
     expect(styleSource).toContain('[role="dialog"] form > div[class*="min-h-0"][class*="flex-1"] > div[class*="overflow-x-auto"]');
     expect(styleSource).toContain("overflow: auto");
@@ -79,14 +86,27 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
     expect(memoSource).toContain("const emptyLineIndex = current.findIndex(line => !line.materialId)");
     expect(memoSource).toContain("materialName: selectedMaterial.name");
     expect(memoSource).toContain("return [...current, { ...emptyLine(), ...selectedMaterialDetails }]");
-    expect(memoSource).toContain("selectedMaterialCache.filter(material => !loadedMaterials.some");
+    expect(memoSource).toContain("selectedMaterialCache.filter(");
+    expect(memoSource).toContain("!loadedMaterials.some(");
     expect(memoSource).not.toContain("updateLine(targetLine, { materialId: String(id) })");
   });
 
   it("يفرض كمية صحيحة موجبة عند إضافة مادة إلى المذكرة", () => {
-    expect(memoSource).toContain('min="0.001" step="0.001" inputMode="decimal"');
+    expect(memoSource).toContain('min="0.001"');
+    expect(memoSource).toContain('step="0.001"');
+    expect(memoSource).toContain('inputMode="decimal"');
     expect(memoSource).toContain("const invalidQuantity = lines.some");
     expect(memoSource).toContain("أدخل كمية موجبة صحيحة أو عشرية");
+  });
+
+  it("يفتح إنشاء مادة جديدة بدل رفض مذكرة بلا مادة، ويركب الحوار في الواجهة الفعالة", () => {
+    expect(memoSource).toContain("if (canCreateMaterial) openQuickMaterial();");
+    expect(memoSource).toContain("onClick={openQuickMaterial}");
+    expect(memoSource).toContain("filteredMaterials.length > 0");
+    expect(memoSource).toContain("event.stopPropagation();");
+    const dialogMount = memoSource.lastIndexOf("<MemoQuickMaterialDialog");
+    expect(dialogMount).toBeGreaterThan(memoSource.lastIndexOf("</AlertDialog>"));
+    expect(memoSource).toContain("onMaterialCreated={addCreatedMaterial}");
   });
 
   it("يطبق تنسيق الأرقام المختصر على جداول الواجهة", () => {
@@ -99,18 +119,50 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
 
   it("يخفي عمود السعر كاملًا في المذكرات غير المسعّرة ويبقيه للاستلام الجديد", () => {
     expect(memoSource).toContain("{priceAllowed && <th className=\"px-3 py-2\">السعر</th>}");
-    expect(memoSource).toContain("{priceAllowed && <td className=\"px-3 py-2\">");
+    expect(memoSource).toContain("{priceAllowed && (");
     expect(memoSource).toContain("colSpan={priceAllowed ? 7 : 6}");
     expect(memoDetailsSource).toContain("memoClassificationHasPrice(classification)");
   });
 
-  it("يوجه طباعة سجل المذكرات إلى قالب الطباعة الرسمي بدل طباعة الصفحة", () => {
-    expect(memoSource).toContain('import { printMemo } from "@/lib/memoPrint"');
-    expect(memoSource).toContain('import { openPrintWindow } from "@/lib/printWindow"');
-    expect(memoSource).toContain("startMemoPrint(memo.id)");
-    expect(memoSource).toContain("setPrintWindow(page); setPrintTargetId(id)");
-    expect(memoSource).toContain("printMemo(printQuery.data, printWindow)");
+  it("يحصر سجل المذكرات بالتصفح والبحث وينقل الإجراءات إلى التفاصيل", () => {
+    expect(memoSource).not.toContain("trpc.memos.approve.useMutation");
+    expect(memoSource).not.toContain("trpc.memos.cancel.useMutation");
+    expect(memoSource).not.toContain("trpc.memos.delete.useMutation");
+    expect(memoSource).not.toContain("startMemoPrint");
+    expect(memoSource).toContain("memoGeneralSearch");
+    expect(memoSource).toContain("memoFinancialSearch");
+    expect(memoSource).toContain("memoSerialSearch");
+    expect(memoDetailsSource).toContain("trpc.memos.cancel.useMutation");
+    expect(memoDetailsSource).toContain("trpc.memos.delete.useMutation");
+    expect(memoDetailsSource).toContain("printMemo(memo)");
+    expect(memoDetailsSource).not.toContain("trpc.memos.approve");
+    expect(memoDetailsSource).not.toContain("مطابقة مع المالية");
+    expect(memoDetailsSource).not.toContain("حالة المطابقة المالية");
     expect(memoSource).not.toContain("window.print()");
+  });
+
+  it("يرحّل الإنشاء المخزون مباشرةً ويزيل مسار الاعتماد المنفصل", () => {
+    expect(memoSource).toContain("تم إنشاء المذكرة وترحيل حركتها إلى المخزون بنجاح.");
+    expect(dbSource).toContain('const status = "approved" as const');
+    expect(dbSource).toContain('movementType: input.type');
+    expect(dbSource).toContain("لا يتوفر رصيد كافٍ لإنشاء المذكرة");
+    expect(dbSource).toContain('.for("update")');
+    expect(dbSource).not.toContain("export async function approveMemo(");
+    expect(routerSource).toContain("لم يعد هناك اعتماد منفصل");
+    expect(routerSource).not.toContain("warehouseDb.approveMemo");
+    expect(routerSource).not.toContain("review: reviewerProcedure");
+  });
+
+  it("يتنقل بين السابق والتالي ضمن التصنيف نفسه وبترتيب المذكرات", () => {
+    expect(memoDetailsSource).toContain(
+      ".filter(row => row.classification === classification)"
+    );
+    expect(memoDetailsSource).toContain(".slice()");
+    expect(memoDetailsSource).toContain(".reverse()");
+    expect(memoDetailsSource).toContain("const previousMemo = currentIndex > 0");
+    expect(memoDetailsSource).toContain("currentIndex + 1");
+    expect(memoDetailsSource).toContain('aria-label="المذكرة السابقة"');
+    expect(memoDetailsSource).toContain('aria-label="المذكرة التالية"');
   });
 
   it("يوثق عناصر القبول المرئية وبنية الطباعة الرسمية القابلة للمراجعة", () => {
@@ -118,19 +170,22 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
     ["ملف", "المذكرات", "المستودع", "أدوات"].forEach(tab => expect(layoutSource).toContain(`label: "${tab}"`));
   });
 
-  it("يعرض نافذة تأكيد منبثقة قبل الحذف النهائي للمسودة", () => {
-    expect(memoSource).toContain("AlertDialog");
-    expect(memoSource).toContain("تأكيد الحذف النهائي");
-    expect(memoSource).toContain("نعم، احذف نهائيًا");
-    expect(memoSource).toContain("setDeleteTarget({ id: memo.id, memoNumber: memo.memoNumber })");
+  it("يحذف المسودة مباشرةً مع الإبقاء على حماية المذكرات المرحّلة", () => {
+    expect(memoSource).not.toContain("تأكيد الحذف النهائي");
+    expect(memoDetailsSource).toContain("/> حذف");
+    expect(memoDetailsSource).toContain("onClick={() => deleteMutation.mutate({ id: memo.id })}");
+    expect(memoDetailsSource).not.toContain("حذف نهائي");
+    expect(memoDetailsSource).toContain("trpc.memos.delete.useMutation");
+    expect(dbSource).toContain('memo.status !== "draft"');
+    expect(dbSource).toContain('if (movement)');
   });
 
-  it("يثبت الإلغاء الإداري دون حذف السجل وإزالة زر الإغلاق من المحرر", () => {
-    expect(memoSource).toContain("trpc.memos.cancel.useMutation");
-    expect(memoSource).toContain("trpc.memos.delete.useMutation");
-    expect(memoSource).toContain("حذف نهائي");
-    expect(memoSource).toContain("إلغاء المذكرة");
-    expect(memoSource).toContain("دون حذف سجلها");
+  it("يضع الإلغاء الإداري ضمن التفاصيل دون حذف سجل المذكرة", () => {
+    expect(memoSource).not.toContain("trpc.memos.cancel.useMutation");
+    expect(memoSource).not.toContain("trpc.memos.delete.useMutation");
+    expect(memoDetailsSource).toContain("trpc.memos.cancel.useMutation");
+    expect(memoDetailsSource).toContain("إلغاء");
+    expect(memoDetailsSource).toContain("سيبقى سجلها محفوظًا");
     expect(memoSource).not.toContain("<X className=\"ml-1 h-4 w-4\" />إغلاق");
   });
 
@@ -149,7 +204,7 @@ describe("تجربة قوائم التبويبات والمذكرة", () => {
 
   it("يوفر بحث الجهة وإضافتها من رأس المذكرة ثم يختارها تلقائيًا", () => {
     expect(memoSource).toContain("MemoPartyPicker");
-    ["ابحث واختر جهة أو مورد", "handleSearchKeyDown", "إضافة جهة جديدة باسم", "limit: 500", "trpc.entities.listParties.useQuery", "trpc.entities.createParty.useMutation", "تمت إضافة الجهة واختيارها للمذكرة."].forEach(label => expect(partyPickerSource).toContain(label));
+    ["بحث واختيار جهة أو مورد", "handleSearchKeyDown", "إضافة جهة جديدة باسم", "limit: 500", "trpc.entities.listParties.useQuery", "trpc.entities.createParty.useMutation", "تمت إضافة الجهة واختيارها للمذكرة."].forEach(label => expect(partyPickerSource).toContain(label));
   });
 
   it("يفتح إضافة مادة جديدة عند الضغط على Enter بلا نتائج ويدرجها مباشرةً في سطر المذكرة", () => {

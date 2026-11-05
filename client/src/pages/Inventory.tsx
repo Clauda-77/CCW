@@ -2021,10 +2021,10 @@ function buildReportRows(
   const scoped =
     mode === "movement"
       ? reportRows.filter(
-          row =>
-            Number(row.inboundQuantity) !== 0 ||
-            Number(row.outboundQuantity) !== 0
-        )
+        row =>
+          Number(row.inboundQuantity) !== 0 ||
+          Number(row.outboundQuantity) !== 0
+      )
       : reportRows;
   const rows: Array<Array<string | number>> = scoped.map((row, index) => {
     const serial = (reportPage - 1) * MATERIALS_PER_PAGE + index + 1;
@@ -2137,10 +2137,10 @@ export default function InventoryPage({
     () =>
       reportSession
         ? {
-            ...reportSession.filters,
-            limit: MATERIALS_PER_PAGE,
-            offset: (reportSession.page - 1) * MATERIALS_PER_PAGE,
-          }
+          ...reportSession.filters,
+          limit: MATERIALS_PER_PAGE,
+          offset: (reportSession.page - 1) * MATERIALS_PER_PAGE,
+        }
         : undefined,
     [reportSession]
   );
@@ -2201,11 +2201,11 @@ export default function InventoryPage({
     const isRangeReport = cardPrintMode === "range";
     const rows = isRangeReport
       ? buildMaterialCardRows(
-          card.movements,
-          card.openingQuantity,
-          fromDate,
-          toDate
-        )
+        card.movements,
+        card.openingQuantity,
+        fromDate,
+        toDate
+      )
       : buildMaterialCardRows(card.movements, card.openingQuantity);
     renderOfficialReport(cardWindow, {
       title: isRangeReport ? "حركة مادة بين تاريخين" : "بطاقة المادة",
@@ -2251,8 +2251,8 @@ export default function InventoryPage({
       try {
         const result = usePreview
           ? await utils.inventory.previewReportBalances.fetch(
-              activeSession.filters
-            )
+            activeSession.filters
+          )
           : await utils.inventory.reportBalances.fetch(activeSession.filters);
         const allRows = result as InventoryRow[];
         const { type, title } = reportDefinition(activeSession.mode);
@@ -2447,12 +2447,17 @@ export default function InventoryPage({
       }
       setCardWindow(page);
       setCardPrintMode(mode === "cardRange" ? "range" : "all");
+      // setCardTarget({
+      //   materialId: selectedBalance.materialId,
+      //   materialIds: selectedBalance.materialIds,
+      //   warehouseId: selectedBalance.warehouseId > 0 ? selectedBalance.warehouseId : undefined,
+      //   partyId: selectedBalance.partyId,
+      // });
       setCardTarget({
         materialId: selectedBalance.materialId,
         materialIds: selectedBalance.materialIds,
-        warehouseId: selectedBalance.warehouseId > 0 ? selectedBalance.warehouseId : undefined,
-        partyId: selectedBalance.partyId,
       });
+
       return;
     }
     if (mode === "inventory" && (!fromDate || !toDate)) {
@@ -2822,17 +2827,15 @@ export default function InventoryPage({
       </Card>
 
       <Card
-        className={`soft-shadow border-[#9bd8f0] bg-[#ecf9ff] ${
-          reportsOnly ? "mx-auto max-w-xl" : ""
-        }`}
+        className={`soft-shadow border-[#9bd8f0] bg-[#ecf9ff] ${reportsOnly ? "mx-auto max-w-xl" : ""
+          }`}
       >
         <CardContent className="p-5">
           <div
-            className={`flex flex-col gap-4 ${
-              reportsOnly
+            className={`flex flex-col gap-4 ${reportsOnly
                 ? "items-center justify-center text-center"
                 : "lg:flex-row lg:items-center lg:justify-between"
-            }`}
+              }`}
           >
             <div className={reportsOnly ? "text-center" : ""}>
               <p className="text-sm font-extrabold text-[#07518e]">

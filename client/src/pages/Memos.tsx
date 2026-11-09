@@ -5082,29 +5082,45 @@ export default function MemosPage({
                   البحث هنا يصفّي رأس المذكرة كاملًا، وليس موادها فقط.
                 </p>
               </div>
-              <div className="grid gap-2 md:grid-cols-3">
-                {hasFinancialNumber && (
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                <div className="grid flex-1 gap-2 md:grid-cols-3">
+                  {hasFinancialNumber && (
+                    <Input
+                      value={memoFinancialSearch}
+                      onChange={event =>
+                        setMemoFinancialSearch(event.target.value)
+                      }
+                      placeholder="بحث بالرقم المالي للمذكرة"
+                      aria-label="بحث بالرقم المالي للمذكرة"
+                    />
+                  )}
                   <Input
-                    value={memoFinancialSearch}
-                    onChange={event =>
-                      setMemoFinancialSearch(event.target.value)
-                    }
-                    placeholder="بحث بالرقم المالي للمذكرة"
-                    aria-label="بحث بالرقم المالي للمذكرة"
+                    value={memoSerialSearch}
+                    onChange={event => setMemoSerialSearch(event.target.value)}
+                    placeholder="بحث بالرقم المتسلسل للمذكرة"
+                    aria-label="بحث بالرقم التسلسلي للمذكرة"
                   />
+                  <Input
+                    value={memoGeneralSearch}
+                    onChange={event => setMemoGeneralSearch(event.target.value)}
+                    placeholder="بحث عام برقم أو تاريخ أو جهة المذكرة"
+                    aria-label="بحث عام في المذكرات"
+                  />
+                </div>
+                {canCreate && (
+                  <Button
+                    type="button"
+                    className="shrink-0"
+                    style={{ backgroundColor: accent }}
+                    onClick={() => {
+                      setEditTargetId(null);
+                      setOpen(true);
+                    }}
+                  >
+                    <FilePlus2 className="ml-2 h-4 w-4" />
+                    إنشاء مذكرة
+                  </Button>
                 )}
-                <Input
-                  value={memoSerialSearch}
-                  onChange={event => setMemoSerialSearch(event.target.value)}
-                  placeholder="بحث بالرقم المتسلسل للمذكرة"
-                  aria-label="بحث بالرقم التسلسلي للمذكرة"
-                />
-                <Input
-                  value={memoGeneralSearch}
-                  onChange={event => setMemoGeneralSearch(event.target.value)}
-                  placeholder="بحث عام برقم أو تاريخ أو جهة المذكرة"
-                  aria-label="بحث عام في المذكرات"
-                />
               </div>
             </div>
             <div className="overflow-x-auto">

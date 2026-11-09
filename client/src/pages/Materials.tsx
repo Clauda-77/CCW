@@ -289,6 +289,8 @@ import { toast } from "sonner";
 
 type MaterialForm = { code: string; name: string; description: string; unit: string; barcode: string; minimumStock: string };
 const initialForm: MaterialForm = { code: "", name: "", description: "", unit: "عدد", barcode: "", minimumStock: "0" };
+const normalizeMaterialIdentity = (value: string) =>
+  value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 
 export default function MaterialsPage() {
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("search") ?? "");
@@ -325,9 +327,49 @@ export default function MaterialsPage() {
     onError: error => toast.error(error.message || "تعذر حذف المادة نهائيًا."),
   });
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const input = { ...form, minimumStock: Number(form.minimumStock) || 0 };
+    const code = form.code.trim();
+    const name = form.name.trim().replace(/\s+/g, " ");
+    if (!code || !name) {
+      toast.error("أدخل رمز المادة واسمها.");
+      return;
+    }
+
+    let codeMatches: Awaited<ReturnType<typeof utils.materials.list.fetch>>;
+    let nameMatches: Awaited<ReturnType<typeof utils.materials.list.fetch>>;
+    try {
+      [codeMatches, nameMatches] = await Promise.all([
+        utils.materials.list.fetch({ search: code }),
+        utils.materials.list.fetch({ search: name }),
+      ]);
+    } catch {
+      toast.error("تعذر التحقق من تكرار المادة. لم يتم حفظها؛ حاول مرة أخرى.");
+      return;
+    }
+
+    const normalizedCode = normalizeMaterialIdentity(code);
+    const normalizedName = normalizeMaterialIdentity(name);
+    const duplicateCode = codeMatches.some(
+      material =>
+        material.id !== editingId &&
+        normalizeMaterialIdentity(material.code) === normalizedCode
+    );
+    if (duplicateCode) {
+      toast.error("رمز المادة مستخدم لمادة أخرى. أدخل رمزًا مختلفًا.");
+      return;
+    }
+    const duplicateName = nameMatches.some(
+      material =>
+        material.id !== editingId &&
+        normalizeMaterialIdentity(material.name) === normalizedName
+    );
+    if (duplicateName) {
+      toast.error("اسم المادة مستخدم لمادة أخرى. أدخل اسمًا مختلفًا.");
+      return;
+    }
+
+    const input = { ...form, code, name, minimumStock: Number(form.minimumStock) || 0 };
     if (editingId !== null) updateMutation.mutate({ id: editingId, ...input }); else createMutation.mutate(input);
   };
   const editMaterial = (material: { id: number; code: string; name: string; description: string | null; unit: string; barcode: string | null; minimumStock: string }) => { setEditingId(material.id); setForm({ code: material.code, name: material.name, description: material.description || "", unit: material.unit, barcode: material.barcode || "", minimumStock: material.minimumStock }); setDialogOpen(true); };

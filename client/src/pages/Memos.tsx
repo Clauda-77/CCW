@@ -664,7 +664,7 @@
 // //                     ? "مذكرة استلام"
 // //                     : transferMode
 // //                       ? "إنشاء محضر تركيب وتنسيق"
-// //                       : "إنشاء مذكرة تسليم وإخراج"}
+// //                       : "إنشاء مذكرة تسليم "}
 // //                 </h1>
 // //                 <p className="mt-1 text-xs text-white/85">
 // //                   أدخل بيانات الرأس، ثم اختر الجهة والمواد قبل الحفظ.
@@ -1100,7 +1100,7 @@
 // //                       ? "مذكرة استلام"
 // //                       : transferMode
 // //                         ? "إنشاء محضر تركيب وتنسيق"
-// //                         : "إنشاء مذكرة تسليم وإخراج"}
+// //                         : "إنشاء مذكرة تسليم "}
 // //                   </DialogTitle>
 // //                   <DialogDescription className="sr-only">
 // //                     نموذج إنشاء أو تعديل المذكرة وموادها.
@@ -2450,7 +2450,7 @@
 //                     ? "مذكرة استلام"
 //                     : transferMode
 //                       ? "إنشاء محضر تركيب وتنسيق"
-//                       : "إنشاء مذكرة تسليم وإخراج"}
+//                       : "إنشاء مذكرة تسليم "}
 //                 </h1>
 //                 <p className="mt-1 text-xs text-white/85">
 //                   أدخل بيانات الرأس، ثم اختر الجهة والمواد قبل الحفظ.
@@ -2886,7 +2886,7 @@
 //                       ? "مذكرة استلام"
 //                       : transferMode
 //                         ? "إنشاء محضر تركيب وتنسيق"
-//                         : "إنشاء مذكرة تسليم وإخراج"}
+//                         : "إنشاء مذكرة تسليم "}
 //                   </DialogTitle>
 //                   <DialogDescription className="sr-only">
 //                     نموذج إنشاء أو تعديل المذكرة وموادها.
@@ -3600,8 +3600,6 @@
 //   );
 // }
 
-
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -3727,12 +3725,17 @@ export default function MemosPage({
   const usePreview = isDevelopment && !isAuthenticated;
   // تشغيل المشروع محلياً لا يمنح صلاحية تغيير المستودع؛ المدير فقط يستطيع ذلك.
   const canChooseWarehouse = user?.role === "admin";
-  const sessionWarehouseId = (user as typeof user & { warehouseId?: number | null } | null)?.warehouseId ?? null;
+  const sessionWarehouseId =
+    (user as (typeof user & { warehouseId?: number | null }) | null)
+      ?.warehouseId ?? null;
   const assignedWarehouses = trpc.auth.assignedWarehouses.useQuery(undefined, {
     enabled: isAuthenticated && !canChooseWarehouse,
   });
-  const assignedWarehouseId = sessionWarehouseId
-    ?? (assignedWarehouses.data?.length === 1 ? assignedWarehouses.data[0].id : null);
+  const assignedWarehouseId =
+    sessionWarehouseId ??
+    (assignedWarehouses.data?.length === 1
+      ? assignedWarehouses.data[0].id
+      : null);
   useEffect(() => {
     if (!open || editTargetId !== null || canChooseWarehouse) return;
     if (assignedWarehouseId) setWarehouseId(String(assignedWarehouseId));
@@ -3849,10 +3852,10 @@ export default function MemosPage({
   const canCreate = isDevelopment || isAuthenticated;
   const canCreateParty =
     isAuthenticated &&
-    ["data_entry", "warehouse_keeper", "reviewer", "admin"].includes(user?.role ?? "user");
-  const canCreateMaterial =
-    isAuthenticated &&
-    user?.role === "admin";
+    ["data_entry", "warehouse_keeper", "reviewer", "admin"].includes(
+      user?.role ?? "user"
+    );
+  const canCreateMaterial = isAuthenticated && user?.role === "admin";
   const memoListPath = inbound
     ? inboundEntry
       ? "/entry"
@@ -3862,7 +3865,11 @@ export default function MemosPage({
       : "/outbound";
   const clearForm = () => {
     setMemoNumber("");
-    setWarehouseId(!canChooseWarehouse && assignedWarehouseId ? String(assignedWarehouseId) : "");
+    setWarehouseId(
+      !canChooseWarehouse && assignedWarehouseId
+        ? String(assignedWarehouseId)
+        : ""
+    );
     setPartyId("");
     setFolderNumber("");
     setOrderNumber("");
@@ -3895,14 +3902,20 @@ export default function MemosPage({
       setEditTargetId(parsedEditId);
       setOpen(true);
     }
-    window.history.replaceState(window.history.state, "", window.location.pathname);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname
+    );
   }, [canCreate]);
   const closeEditor = () => {
     const currentEditId = editTargetId;
     setOpen(false);
     setEditTargetId(null);
     clearForm();
-    setLocation(currentEditId !== null ? `/memos/${currentEditId}` : memoListPath);
+    setLocation(
+      currentEditId !== null ? `/memos/${currentEditId}` : memoListPath
+    );
   };
   const createMutation = trpc.memos.create.useMutation({
     onSuccess: async result => {
@@ -3947,12 +3960,12 @@ export default function MemosPage({
     const selectedMaterial = materials.find(material => material.id === id);
     const selectedMaterialDetails = selectedMaterial
       ? {
-        materialId: String(id),
-        materialName: selectedMaterial.name,
-        materialUnit: selectedMaterial.unit,
-        materialCode: selectedMaterial.code,
-        materialNotes: selectedMaterial.description ?? "",
-      }
+          materialId: String(id),
+          materialName: selectedMaterial.name,
+          materialUnit: selectedMaterial.unit,
+          materialCode: selectedMaterial.code,
+          materialNotes: selectedMaterial.description ?? "",
+        }
       : { materialId: String(id) };
     setLines(current => {
       const requestedLine =
@@ -4091,7 +4104,14 @@ export default function MemosPage({
       setWarehouseId(current => current || String(currentWarehouse.id));
     if (hasFinancialNumber && nextSerialNumber)
       setMemoNumber(current => current || nextSerialNumber);
-  }, [assignedWarehouseId, canChooseWarehouse, entities?.warehouses, hasFinancialNumber, nextSerialNumber, open]);
+  }, [
+    assignedWarehouseId,
+    canChooseWarehouse,
+    entities?.warehouses,
+    hasFinancialNumber,
+    nextSerialNumber,
+    open,
+  ]);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (materialSearchEnterRef.current) {
@@ -4202,7 +4222,7 @@ export default function MemosPage({
                     ? "مذكرة استلام"
                     : transferMode
                       ? "إنشاء محضر تركيب وتنسيق"
-                      : "إنشاء مذكرة تسليم وإخراج"}
+                      : "إنشاء مذكرة تسليم "}
                 </h1>
                 <p className="mt-1 text-xs text-white/85">
                   أدخل بيانات الرأس، ثم اختر الجهة والمواد قبل الحفظ.
@@ -4535,11 +4555,7 @@ export default function MemosPage({
               </aside>
             </section>
             <footer className="flex shrink-0 justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={closeEditor}
-              >
+              <Button type="button" variant="outline" onClick={closeEditor}>
                 إلغاء
               </Button>
               <Button
@@ -4608,10 +4624,12 @@ export default function MemosPage({
                       <Icon className="h-5 w-5" />
                     </span>
                     {inbound
-                      ? "مذكرة استلام"
+                      ? inboundEntry
+                        ? "مذكرة إدخال"
+                        : "مذكرة استلام"
                       : transferMode
-                        ? "إنشاء محضر تركيب وتنسيق"
-                        : "إنشاء مذكرة تسليم وإخراج"}
+                        ? "محضر تركيب وتنسيق"
+                        : " مذكرة تسليم "}
                   </DialogTitle>
                   <DialogDescription className="sr-only">
                     نموذج إنشاء أو تعديل المذكرة وموادها.
@@ -4911,7 +4929,8 @@ export default function MemosPage({
                         بحث المواد
                       </h3>
                       <p className="mt-1 text-xs text-[#4b7792]">
-                        اختر مادة لإضافتها، أو اكتب اسم مادة غير موجودة واضغط Enter لإنشائها.
+                        اختر مادة لإضافتها، أو اكتب اسم مادة غير موجودة واضغط
+                        Enter لإنشائها.
                       </p>
                       <div className="relative mt-3">
                         <Search className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -5151,7 +5170,12 @@ export default function MemosPage({
                       }}
                       className="cursor-pointer border-t border-slate-100 text-sm hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0071ba]"
                     >
-                      <td className="px-5 py-4 font-bold">{displayMemoNumber(memo.sourceMemoNumber, memo.memoNumber)}</td>
+                      <td className="px-5 py-4 font-bold">
+                        {displayMemoNumber(
+                          memo.sourceMemoNumber,
+                          memo.memoNumber
+                        )}
+                      </td>
                       <td className="px-5 py-4">{memo.partyName || ""}</td>
                       <td className="px-5 py-4 text-muted-foreground">
                         {memo.warehouseName}

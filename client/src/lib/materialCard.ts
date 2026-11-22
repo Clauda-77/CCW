@@ -54,6 +54,9 @@ import { displayMemoNumber } from "./memoNumber";
 
 export type MaterialCardMovement = {
   memoNumber: string | null;
+  memoType?: string;
+  memoNotes?: string | null;
+  referenceNumber?: string | null;
   sourceMemoNumber?: string | null;
   folderNumber?: string | null;
   memoDate: Date | string | null;
@@ -74,15 +77,16 @@ const movementLabel: Record<MaterialCardMovement["movementType"], string> = {
   transfer_out: "تحويل صادر",
 };
 
-export function buildMaterialCardRows(movements: MaterialCardMovement[], openingQuantity: string | number, fromDate?: string, toDate?: string) {
+export function buildMaterialCardRows(movements: MaterialCardMovement[], openingQuantity: string | number, fromDate?: string, toDate?: string, currentYear = new Date().getFullYear(), annualRolloverQuantity: string | number = 0) {
+  const includesAnnualRollover = !fromDate && !toDate;
+  const firstDayOfCurrentYear = new Date(currentYear, 0, 1).getTime();
   let balance = Number(openingQuantity || 0);
   const from = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
   const to = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
   const movementPriority = (movement: MaterialCardMovement) => {
     if (movement.movementType === "opening") return 0;
     if (movement.movementType === "inbound" || movement.movementType === "transfer_in") return 1;
-    if (movement.movementType === "adjustment") return 2;
-    return 3;
+    return 2;
   };
   const sorted = [...movements].sort((left, right) => {
     const leftTime = new Date(left.occurredAt).getTime();
@@ -91,12 +95,17 @@ export function buildMaterialCardRows(movements: MaterialCardMovement[], opening
     const rightDay = new Date(rightTime).setHours(0, 0, 0, 0);
     return leftDay - rightDay || movementPriority(left) - movementPriority(right) || leftTime - rightTime;
   });
-  const rows: Array<Array<string | number | null>> = [];
+  const rolloverBalance = includesAnnualRollover ? Number(annualRolloverQuantity || 0) : balance;
+  if (includesAnnualRollover) balance = rolloverBalance;
+  const rows: Array<Array<string | number | null>> = includesAnnualRollover
+    ? [[1, "مدور", "", `31/12/${currentYear - 1}`, "", "", rolloverBalance, "", "", "جرد نهاية السنة"]]
+    : [];
   for (const movement of sorted) {
     const quantityIn = Number(movement.quantityIn || 0);
     const quantityOut = Number(movement.quantityOut || 0);
-    balance += quantityIn - quantityOut;
     const occurredAt = new Date(movement.occurredAt).getTime();
+    if (includesAnnualRollover && occurredAt < firstDayOfCurrentYear) continue;
+    balance += quantityIn - quantityOut;
     if (occurredAt < from || occurredAt > to) continue;
     const memoNumber = displayMemoNumber(movement.sourceMemoNumber, movement.memoNumber);
     const folderNumber = movement.folderNumber?.trim();

@@ -3064,9 +3064,14 @@ export const appRouter = router({
         })
       )
       .query(async ({ ctx, input }) => {
-        if (input.warehouseId !== undefined) await assertWarehouseAccess(ctx.user, input.warehouseId);
-        else if (!isAdminUser(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "يجب تحديد المستودع لعرض بطاقة المادة." });
-        return warehouseDb.getMaterialCard(input);
+        const allowedWarehouseIds = await getAccessibleWarehouseIds(ctx.user);
+        if (input.warehouseId !== undefined) {
+          await assertWarehouseAccess(ctx.user, input.warehouseId);
+          return warehouseDb.getMaterialCard({ ...input, warehouseIds: [input.warehouseId] });
+        }
+        if (allowedWarehouseIds && allowedWarehouseIds.length === 0)
+          throw new TRPCError({ code: "FORBIDDEN", message: "لا يوجد مستودع مسند إليك لعرض بطاقة المادة." });
+        return warehouseDb.getMaterialCard({ ...input, warehouseIds: allowedWarehouseIds ?? undefined });
       }),
     previewMaterialCard: publicProcedure
       .input(

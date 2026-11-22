@@ -8314,25 +8314,39 @@ export async function getMaterialWarehouseCostEstimate(input: {
 export async function getMaterialCard(input: {
   materialId: number;
   warehouseId?: number;
+  warehouseIds?: number[];
   partyId?: number | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة حاليًا.");
-  const hasLocationScope = input.warehouseId !== undefined;
-  const scope = hasLocationScope
-    ? and(
-      eq(inventoryBalances.materialId, input.materialId),
-      eq(inventoryBalances.warehouseId, input.warehouseId!),
-      sql`${inventoryBalances.partyId} <=> ${input.partyId ?? null}`
-    )
-    : eq(inventoryBalances.materialId, input.materialId);
+  const hasLocationScope = input.warehouseId !== undefined || input.warehouseIds !== undefined;
+  const balanceWarehouseFilters = input.warehouseId !== undefined
+    ? [eq(inventoryBalances.warehouseId, input.warehouseId)]
+    : input.warehouseIds !== undefined
+      ? [inArray(inventoryBalances.warehouseId, input.warehouseIds)]
+      : [];
+  const movementWarehouseFilters = input.warehouseId !== undefined
+    ? [eq(stockMovements.warehouseId, input.warehouseId)]
+    : input.warehouseIds !== undefined
+      ? [inArray(stockMovements.warehouseId, input.warehouseIds)]
+      : [];
+  const balancePartyFilters = input.partyId !== undefined
+    ? [sql`${inventoryBalances.partyId} <=> ${input.partyId}`]
+    : [];
+  const movementPartyFilters = input.partyId !== undefined
+    ? [sql`${stockMovements.partyId} <=> ${input.partyId}`]
+    : [];
   const balances = await db
     .select({
       id: inventoryBalances.id,
       openingQuantity: inventoryBalances.openingQuantity,
     })
     .from(inventoryBalances)
-    .where(scope);
+    .where(and(
+      eq(inventoryBalances.materialId, input.materialId),
+      ...balanceWarehouseFilters,
+      ...balancePartyFilters,
+    ));
   const [material] = await db
     .select({
       code: materials.code,
@@ -8348,6 +8362,7 @@ export async function getMaterialCard(input: {
   const movementFields = {
     memoNumber: memos.memoNumber,
     sourceMemoNumber: memos.sourceMemoNumber,
+    folderNumber: memos.folderNumber,
     memoDate: memos.memoDate,
     occurredAt: stockMovements.occurredAt,
     movementType: stockMovements.movementType,
@@ -8380,12 +8395,10 @@ export async function getMaterialCard(input: {
       ), '')
     )`,
   };
-  const movementBase = hasLocationScope
-    ? [
-      eq(stockMovements.materialId, input.materialId),
-      eq(stockMovements.warehouseId, input.warehouseId!),
-    ]
-    : [eq(stockMovements.materialId, input.materialId)];
+  const movementBase = [
+    eq(stockMovements.materialId, input.materialId),
+    ...movementWarehouseFilters,
+  ];
   const scopedMovements = await db
     .select(movementFields)
     .from(stockMovements)
@@ -8393,12 +8406,7 @@ export async function getMaterialCard(input: {
     .leftJoin(memoItems, eq(stockMovements.memoItemId, memoItems.id))
     .leftJoin(parties, eq(stockMovements.partyId, parties.id))
     .where(
-      hasLocationScope
-        ? and(
-          ...movementBase,
-          sql`${stockMovements.partyId} <=> ${input.partyId ?? null}`
-        )
-        : and(...movementBase)
+      and(...movementBase, ...movementPartyFilters)
     )
     .orderBy(stockMovements.occurredAt, stockMovements.id);
   // بعض الأرصدة التاريخية لا تحمل الجهة نفسها الموجودة على حركة المذكرة؛ لا نترك بطاقة المادة فارغة عند وجود حركات صحيحة للمادة والمستودع.

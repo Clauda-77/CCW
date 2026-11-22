@@ -22,34 +22,59 @@ describe("بطاقة المادة", () => {
     expect(rows[0]?.[6]).toBe(445);
   });
 
+  it("يبدأ البطاقة بمدور صفر مؤقتًا ويتجاهل حركات السنوات السابقة", () => {
+    const rows = buildMaterialCardRows([
+      { memoNumber: "استلام قديم", memoDate: "2025-06-02", occurredAt: "2025-06-02", movementType: "inbound", quantityIn: "8", quantityOut: "0", partyName: "مورد", notes: null },
+      { memoNumber: "صرف قديم", memoDate: "2025-10-01", occurredAt: "2025-10-01", movementType: "outbound", quantityIn: "0", quantityOut: "3", partyName: "جهة", notes: null },
+      { memoNumber: "استلام جديد", memoDate: "2026-01-04", occurredAt: "2026-01-04", movementType: "inbound", quantityIn: "6", quantityOut: "0", partyName: "مورد", notes: null },
+      { memoNumber: "صرف جديد", memoDate: "2026-01-05", occurredAt: "2026-01-05", movementType: "outbound", quantityIn: "0", quantityOut: "2", partyName: "جهة", notes: null },
+    ], 0, undefined, undefined, 2026);
+
+    expect(rows[0]?.[1]).toBe("مدور");
+    expect(rows[0]?.[3]).toBe("31/12/2025");
+    expect(rows[0]?.[6]).toBe(0);
+    expect(rows.slice(1).map(row => row[6])).toEqual([6, 4]);
+  });
+
+  it("يحسب الحركات من قيمة الجرد السنوي المعتمدة عند تمريرها", () => {
+    const rows = buildMaterialCardRows([
+      { memoNumber: "إدخال", memoDate: "2026-01-04", occurredAt: "2026-01-04", movementType: "inbound", quantityIn: "3", quantityOut: "0", partyName: "مورد", notes: null },
+      { memoNumber: "تسليم", memoDate: "2026-01-05", occurredAt: "2026-01-05", movementType: "outbound", quantityIn: "0", quantityOut: "2", partyName: "جهة", notes: null },
+    ], 99, undefined, undefined, 2026, 5);
+
+    expect(rows[0]?.[6]).toBe(5);
+    expect(rows.slice(1).map(row => row[6])).toEqual([8, 6]);
+  });
+
   it("يعرض الاستلام قبل التسليم عند تنفيذ الحركتين في اليوم نفسه", () => {
     const rows = buildMaterialCardRows([
       { memoNumber: "تسليم-2", memoDate: "2026-04-12", occurredAt: "2026-04-12T08:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "7", partyName: "جهة", notes: null },
       { memoNumber: "استلام-1", memoDate: "2026-04-12", occurredAt: "2026-04-12T17:00:00", movementType: "inbound", quantityIn: "10", quantityOut: "0", partyName: "مورد", notes: null },
-    ], "0");
+    ], "0", undefined, undefined, 2026);
 
-    expect(rows.map(row => row[2])).toEqual(["استلام-1", "تسليم-2"]);
-    expect(rows.map(row => row[6])).toEqual([10, 3]);
+    expect(rows[0]?.[1]).toBe("مدور");
+    expect(rows.slice(1).map(row => row[2])).toEqual(["استلام-1", "تسليم-2"]);
+    expect(rows.slice(1).map(row => row[6])).toEqual([10, 3]);
   });
 
   it("يحافظ على الترتيب الزمني إذا كان الإدخال والتسليم بتاريخين مختلفين", () => {
     const rows = buildMaterialCardRows([
       { memoNumber: "إدخال-13", memoDate: "2026-04-13", occurredAt: "2026-04-13T08:00:00", movementType: "inbound", quantityIn: "5", quantityOut: "0", partyName: "مورد", notes: null },
       { memoNumber: "تسليم-12", memoDate: "2026-04-12", occurredAt: "2026-04-12T23:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "3", partyName: "جهة", notes: null },
-    ], "10");
+    ], "0", undefined, undefined, 2026);
 
-    expect(rows.map(row => row[2])).toEqual(["تسليم-12", "إدخال-13"]);
-    expect(rows.map(row => row[6])).toEqual([7, 12]);
+    expect(rows.slice(1).map(row => row[2])).toEqual(["تسليم-12", "إدخال-13"]);
+    expect(rows.slice(1).map(row => row[6])).toEqual([-3, 2]);
   });
 
   it("لا يفرض أولوية الإدخال على أنواع الحركات الأخرى في اليوم نفسه", () => {
     const rows = buildMaterialCardRows([
       { memoNumber: "تسليم-صباحاً", memoDate: "2026-04-12", occurredAt: "2026-04-12T08:00:00", movementType: "outbound", quantityIn: "0", quantityOut: "2", partyName: "جهة", notes: null },
       { memoNumber: "تسوية-مساءً", memoDate: "2026-04-12", occurredAt: "2026-04-12T17:00:00", movementType: "adjustment", quantityIn: "1", quantityOut: "0", partyName: "", notes: null },
-    ], "10");
+    ], "0", undefined, undefined, 2026);
 
-    expect(rows.map(row => row[2])).toEqual(["تسليم-صباحاً", "تسوية-مساءً"]);
-    expect(rows.map(row => row[6])).toEqual([8, 9]);
+    expect(rows.slice(1).map(row => row[2])).toEqual(["تسليم-صباحاً", "تسوية-مساءً"]);
+    expect(rows.slice(1).map(row => row[6])).toEqual([-2, -1]);
   });
 
   it("يعرض رقم المجلد مع رقم المذكرة للاستلام والتركيب والتنسيق", () => {
@@ -68,7 +93,7 @@ describe("بطاقة المادة", () => {
         partyName: "مورد",
         notes: null,
       },
-    ], 0);
+    ], 0, undefined, undefined, 2026);
     const transfer = buildMaterialCardRows([
       {
         memoNumber: "SER-2",
@@ -84,10 +109,10 @@ describe("بطاقة المادة", () => {
         partyName: "جهة",
         notes: null,
       },
-    ], 0);
+    ], 0, undefined, undefined, 2026);
 
-    expect(receipt[0]?.[2]).toBe("12 / SER-1");
-    expect(transfer[0]?.[2]).toBe("13 / SER-2");
+    expect(receipt[1]?.[2]).toBe("12 / SER-1");
+    expect(transfer[1]?.[2]).toBe("13 / SER-2");
   });
 
   it("يعرض رقم المجلد مع رقم المذكرة للتسليم والإدخال", () => {
@@ -106,7 +131,7 @@ describe("بطاقة المادة", () => {
         partyName: "جهة",
         notes: null,
       },
-    ], 0);
+    ], 0, undefined, undefined, 2026);
     const entry = buildMaterialCardRows([
       {
         memoNumber: "SER-4",
@@ -122,10 +147,10 @@ describe("بطاقة المادة", () => {
         partyName: "جهة",
         notes: null,
       },
-    ], 0);
+    ], 0, undefined, undefined, 2026);
 
-    expect(delivery[0]?.[2]).toBe("14 / SER-3");
-    expect(entry[0]?.[2]).toBe("15 / SER-4");
+    expect(delivery[1]?.[2]).toBe("14 / SER-3");
+    expect(entry[1]?.[2]).toBe("15 / SER-4");
   });
 
   it("يستخدم رقم المذكرة الأصلي المستورد بعد رقم المجلد", () => {
@@ -142,8 +167,8 @@ describe("بطاقة المادة", () => {
         partyName: "مورد",
         notes: null,
       },
-    ], 0);
+    ], 0, undefined, undefined, 2026);
 
-    expect(rows[0]?.[2]).toBe("16 / LEGACY-77");
+    expect(rows[1]?.[2]).toBe("16 / LEGACY-77");
   });
 });

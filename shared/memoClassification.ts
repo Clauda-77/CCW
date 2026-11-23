@@ -20,27 +20,44 @@ export function classifyMemo(input: MemoClassificationInput): MemoClassification
 export function memoClassificationLabel(classification: MemoClassification): string {
   switch (classification) {
     case "purchase":
-      return "استلام";
+       return "";
+      // return "استلام";
     case "adjustment":
-      return "تسليم";
+      return "";
+      // return "تسليم";
     case "transfer":
-      return "تركيب وتنسيق";
+      return "";
+      // return "تركيب وتنسيق";
     case "return":
-      return "إدخال";
+      return "";
+      // return "إدخال";
   }
 }
+
+
 
 export function memoClassificationDescription(classification: MemoClassification): string {
   switch (classification) {
     case "purchase":
-      return "استلام مواد جديدة تدخل أول مرة إلى المستودع";
+      return "";
     case "adjustment":
-      return "تسليم مواد إلى الجهة المستلمة";
+      return "";
     case "transfer":
-      return "تركيب وتنسيق دون سعر";
+      return "";
     case "return":
-      return "إدخال مواد قديمة مُرجعة دون سعر";
+      return "";
   }
+  // export function memoClassificationDescription(classification: MemoClassification): string {
+  //   switch (classification) {
+  //     case "purchase":
+  //       return "استلام مواد جديدة تدخل أول مرة إلى المستودع";
+  //     case "adjustment":
+  //       return "تسليم مواد إلى الجهة المستلمة";
+  //     case "transfer":
+  //       return "تركيب وتنسيق دون سعر";
+  //     case "return":
+  //       return "إدخال مواد قديمة مُرجعة دون سعر";
+  //   }
 }
 
 export function memoClassificationHasPrice(classification: MemoClassification): boolean {
